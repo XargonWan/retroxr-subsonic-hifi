@@ -1,7 +1,7 @@
 {
   "id": "xenu.subsonic",
   "name": "Subsonic Hi-Fi NAVI-AZ95",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Xargon",
   "description": "A hi-fi CD changer that plays your own music server and online radio. It speaks the Subsonic API (tested with Navidrome) and streams internet radio stations (tested with AzuraCast). Browse artists, albums and tracks on its screen, keep a size-capped local cache, add your own stations. \"Subsonic Hi-Fi\" is the in-game make; Subsonic, Navidrome and AzuraCast are not affiliated with this mod.",
   "api_version": 1,

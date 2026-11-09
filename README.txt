@@ -14,4 +14,4 @@ A hi-fi CD changer for the RetroXR room that plays your own music server and int
 "Subsonic Hi-Fi NAVI-AZ95" is the in-game make. Subsonic, Navidrome and AzuraCast are the names of the
 protocol and the projects this mod talks to; the mod is not affiliated with or endorsed by any of them.
 
-Status: under construction.
+Status: first playable build. Netplay is not wired; the headset, the Quest and a long listen are still to be tried.

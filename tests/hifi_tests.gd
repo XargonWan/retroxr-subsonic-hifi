@@ -4,7 +4,7 @@ extends Node
 
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const HifiPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
-const EXPECTED_CASES := 30
+const EXPECTED_CASES := 38
 const SCRATCH := "user://sb_hifi_scratch"
 
 var _cases := 0
@@ -107,6 +107,8 @@ func _run() -> void:
 	_check(hifi.source == SubsonicHifi.Source.RADIO and not hifi.is_playing, "STOP leaves the station tuned but silent")
 	hifi.sign_out()
 	_check(not Config.has_login(Config.load_all()), "sign out forgets the key")
+	# The body
+	_body(hifi)
 	# The panel hides
 	HifiPanel.toggle_for(hifi, cam)
 	_check(not panel.visible, "TAB again closes the menu")
@@ -115,6 +117,55 @@ func _run() -> void:
 	_check(hifi.source == SubsonicHifi.Source.RADIO, "an empty queue changes nothing")
 	_check(hifi.song_at(0).is_empty(), "no song while a station is tuned")
 	_finish()
+
+
+func _body(hifi: SubsonicHifi) -> void:
+	var Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
+	_check(hifi.body_triangles > 100 and hifi.body_triangles < 2000, "the body is a few hundred triangles, under the 2000 budget (%d)" % hifi.body_triangles)
+	var gone := true
+	for n: String in ["OpenButton", "RewindButton", "FastForwardButton", "RepeatButton", "ShuffleButton"]:
+		gone = gone and hifi.get_node_or_null(n) == null
+	_check(gone, "the base scene's tray-era keys are gone (no invisible hit boxes in front of the fascia)")
+	var ok_keys := true
+	var xs: Array[float] = []
+	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW]:
+		for spec: Array in row:
+			var b := hifi.get_node_or_null(str(spec[0])) as VRButton
+			if b == null:
+				ok_keys = false
+				continue
+			# Its face is the unit's +Z, on the fascia, inside the fascia's width.
+			ok_keys = ok_keys and b.transform.basis.y.is_equal_approx(Vector3(0, 0, 1)) \
+				and is_equal_approx(b.position.z, Body.FRONT) and absf(b.position.x) < Body.W / 2.0 - Body.CAP.x / 2.0
+			ok_keys = ok_keys and b.get_node("ButtonMesh").visible and b.get_node("ButtonMesh").mesh is BoxMesh
+	_check(ok_keys, "all twelve keys exist, face front, stand on the fascia and wear a cap")
+	var overlap := false
+	var spots := {}
+	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW]:
+		for spec: Array in row:
+			var b := hifi.get_node(str(spec[0])) as VRButton
+			for k: Vector2 in spots:
+				if absf(k.x - b.position.x) < Body.CAP.x and absf(k.y - b.position.y) < Body.CAP.y:
+					overlap = true
+			spots[Vector2(b.position.x, b.position.y)] = true
+	_check(not overlap, "no two caps overlap")
+	var lo := hifi.get_node("AudioLOut") as Node3D
+	var ph := hifi.get_node("PhonesOut") as Node3D
+	_check(lo.position.z < -Body.D / 2.0 and ph.position.z > Body.D / 2.0 - 0.001, "the line out is on the back, PHONES on the front")
+	var up := hifi.get_node("UpButton") as VRButton
+	var before: int = hifi.browser.page()["cursor"]
+	hifi.browser.refresh_home()
+	hifi.browser.pages.stack[0]["cursor"] = 0
+	up.button_pressed.emit()
+	var down := hifi.get_node("DownButton") as VRButton
+	down.button_pressed.emit()
+	down.button_pressed.emit()
+	_check(hifi.browser.page()["cursor"] == 1, "the keys reach the browser (down, down, up: row 1; was %d)" % before)
+	var knob := hifi.get_node("LevelKnob") as VRKnob
+	knob.set_value(0.4)
+	_check(is_equal_approx(hifi.phones_level, 0.4), "the LEVEL knob sets the headphones' level")
+	var sv := hifi.get_node("Screen/Viewport") as SubViewport
+	_check(sv != null and sv.get_child_count() == 1 and sv.get_child(0).get("browser") == hifi.browser, "the screen is up and bound to the browser")
 
 
 func _finish() -> void:

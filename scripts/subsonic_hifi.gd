@@ -21,6 +21,10 @@ const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Cache = preload("res://mods/xenu.subsonic/scripts/sb_cache.gd")
 const Client = preload("res://mods/xenu.subsonic/scripts/sb_client.gd")
 const OptionsPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
+const Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
+const Browser = preload("res://mods/xenu.subsonic/scripts/hifi_browser.gd")
+const ScreenScene = preload("res://mods/xenu.subsonic/scenes/hifi_screen.tscn")
+const ViewportScene = preload("res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn")
 
 enum Source { NONE, LIBRARY, RADIO }
 
@@ -45,11 +49,36 @@ var status := ""
 var transcode_format := ""
 var transcode_kbps := 0
 
+## The LCD's pages and what a press does; the screen draws it.
+var browser: RefCounted = null
+## The cover of what plays (a small texture), or null.
+var cover: Texture2D = null
+## Triangles the body draws (a test holds it to a budget).
+var body_triangles := 0
+
+var _screen: Node3D = null
+var _covers := {}
+var _tick: Timer = null
 var _loading_idx := -1
 var _downloading := {}
 var _radio_timer: Timer = null
 var _radio_retries := 0
 var _radio_wanted := false
+
+
+## The scene is the base CD player's: its tray-era keys and its model go before the deck's own @onready lookups run
+## (a node freed here is never found, so the base wires only what stays).
+func _enter_tree() -> void:
+	for n: String in ["OpenButton", "RewindButton", "FastForwardButton", "RepeatButton", "ShuffleButton", "Model"]:
+		var c := get_node_or_null(n)
+		if c != null:
+			remove_child(c)
+			c.queue_free()
+	if get_node_or_null("Model") == null:
+		var model := Node3D.new()
+		model.name = "Model"
+		add_child(model)
+		move_child(model, 0)
 
 
 func _ready() -> void:
@@ -84,6 +113,60 @@ func _setup_loader() -> void:
 	if _media_slot != null:
 		_media_slot.enabled = false
 		_media_slot.visible = false
+	body_triangles = Body.build(self, get_node("Model"))
+	var knob := get_node("LevelKnob") as VRKnob
+	knob.value_changed.connect(set_phones_level)
+	set_phones_level(knob.value)
+	browser = Browser.new(self)
+	for spec: Array in [["MenuButton", "menu"], ["BackButton", "back"], ["LeftButton", "left"], ["UpButton", "up"],
+			["DownButton", "down"], ["RightButton", "right"], ["OkButton", "ok"]]:
+		var cmd: String = spec[1]
+		(get_node(str(spec[0])) as VRButton).button_pressed.connect(func() -> void:
+			if _mains_gate(cmd.to_upper()):
+				browser.nav(cmd))
+	_build_screen()
+	print("[Subsonic] %s: body of %d triangles" % [name, body_triangles])
+
+
+func _build_screen() -> void:
+	var vp := ViewportScene.instantiate()
+	vp.name = "Screen"
+	vp.screen_size = Body.SCREEN
+	vp.scene = ScreenScene
+	vp.viewport_size = Vector2(640, 320)
+	vp.unshaded = true
+	vp.update_mode = XRToolsViewport2DIn3D.UpdateMode.UPDATE_THROTTLED
+	vp.throttle_fps = 12.0
+	vp.position = Vector3(Body.SCREEN_AT.x, Body.SCREEN_AT.y, Body.FRONT + 0.0031)
+	add_child(vp)
+	_screen = vp
+	_bind_screen.call_deferred(0)
+
+
+## The 2D page appears a frame after the viewport does: wait for it, then hand it the browser.
+func _bind_screen(attempt: int) -> void:
+	if not is_instance_valid(_screen):
+		return
+	var sv := _screen.get_node_or_null("Viewport") as SubViewport
+	if sv == null or sv.get_child_count() == 0:
+		if attempt < 120:
+			get_tree().create_timer(0.05).timeout.connect(_bind_screen.bind(attempt + 1))
+		else:
+			print("[Subsonic] %s: the screen never came up" % name)
+		return
+	var ui := sv.get_child(0)
+	ui.call("bind", browser, self)
+	browser.refresh_home()
+	state_changed.connect(func() -> void:
+		if browser.pages.depth() == 1:
+			browser.refresh_home())
+	_tick = Timer.new()
+	_tick.wait_time = 1.0
+	_tick.timeout.connect(func() -> void:
+		if is_playing:
+			state_changed.emit())
+	add_child(_tick)
+	_tick.start()
 
 
 func _log_tag() -> String:
@@ -253,6 +336,7 @@ func play() -> void:
 			return
 		cache.touch(cname)
 		_prefetch(_track_idx + 1)
+		_load_cover(str(song.get("cover", "")))
 	_loading_idx = -1
 	if status == "LOADING":
 		status = ""
@@ -281,6 +365,7 @@ func stop() -> void:
 ## Stop what is on without forgetting the queue's identity (a new source is about to replace it).
 func _halt() -> void:
 	_loading_idx = -1
+	cover = null
 	if is_playing:
 		super.stop()
 
@@ -316,6 +401,30 @@ func _fetch(idx: int, then_play: bool) -> void:
 func _prefetch(idx: int) -> void:
 	if idx < queue.size() and not cache.has(_cache_name(queue[idx])):
 		_fetch(idx, false)
+
+
+## The small cover of what plays: asked of the server once per cover (kept in memory, 24 at most).
+func _load_cover(id: String) -> void:
+	cover = null
+	if id.is_empty() or not client.has_login():
+		return
+	if _covers.has(id):
+		cover = _covers[id]
+		return
+	client.fetch_bytes(Api.cover_art(id, 96), func(ok: bool, bytes: Variant, _code: int) -> void:
+		if not ok:
+			return
+		var img := Image.new()
+		var data := bytes as PackedByteArray
+		if img.load_jpg_from_buffer(data) != OK and img.load_png_from_buffer(data) != OK and img.load_webp_from_buffer(data) != OK:
+			print("[Subsonic] %s: a cover that is no image I know (%d bytes)" % [name, data.size()])
+			return
+		if _covers.size() >= 24:
+			_covers.erase(_covers.keys()[0])
+		_covers[id] = ImageTexture.create_from_image(img)
+		if source == Source.LIBRARY and str(song_at(_track_idx).get("cover", "")) == id:
+			cover = _covers[id]
+			state_changed.emit())
 
 
 ## The cache's size changed in the TAB menu (or its contents should be looked at).
