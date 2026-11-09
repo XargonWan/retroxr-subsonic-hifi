@@ -5,7 +5,7 @@ extends Node
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
 const HifiPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
-const EXPECTED_CASES := 87
+const EXPECTED_CASES := 91
 const SCRATCH := "user://sb_hifi_scratch"
 
 var _cases := 0
@@ -165,6 +165,13 @@ func _body(hifi: SubsonicHifi) -> void:
 	down.button_pressed.emit()
 	down.button_pressed.emit()
 	_check(hifi.browser.page()["cursor"] == 1, "the keys reach the browser (down, down, up: row 1; was %d)" % before)
+	var knob_cap := hifi.get_node("LevelKnob/KnobPivot/KnobCap") as MeshInstance3D
+	_check((knob_cap.mesh as CylinderMesh).top_radius >= 0.018, "the LEVEL knob is a big one (%.0f mm across)" % ((knob_cap.mesh as CylinderMesh).top_radius * 2000.0))
+	_check(hifi.get_node("PhonesOut").position.x < hifi.get_node("LevelKnob").position.x, "PHONES stands left of the knob, which has the room at the right")
+	var hole := hifi.get_node_or_null("Model/PhonesHole") as MeshInstance3D
+	_check(hole != null and hole.material_override == Body._mat("black", Color.BLACK) and is_equal_approx(hole.position.x, hifi.get_node("PhonesOut").position.x), "PHONES has a black hole behind its socket")
+	var kshape := (hifi.get_node("LevelKnob/CollisionShape3D") as CollisionShape3D).shape as BoxShape3D
+	_check(kshape.size.x >= 0.038, "and the knob's box is as big as the knob")
 	# PLAY is OK once the cursor has been moved from the unit's keys.
 	var played: Array = []
 	hifi.browser.go_home()

@@ -57,8 +57,11 @@ const LED_Y := -0.0252
 const LED_XS := [0.0385, 0.0525, 0.0675]
 const LED_NAMES := ["CD", "TAPE", "NET"]
 
-const PHONES_AT := Vector2(0.1806, -0.041)
-const KNOB_AT := Vector2(0.135, -0.0416)
+## PHONES at the left of the pair, the big LEVEL knob at the right (it has the room there).
+const PHONES_AT := Vector2(0.0975, -0.041)
+const KNOB_AT := Vector2(0.1645, -0.0416)
+const KNOB_RADIUS := 0.0195
+const KNOB_HEIGHT := 0.016
 
 ## The navigation keys, top to bottom: node name, glyph. (There is no OK: PLAY opens the row the cursor was moved to.)
 const NAV_COLUMN := [["MenuButton", "menu"], ["BackButton", "left"], ["UpButton", "up"], ["DownButton", "down"]]
@@ -150,6 +153,19 @@ static func build(host: Node3D, model: Node3D) -> int:
 			foot.material_override = black
 			foot.position = Vector3(fx * (W / 2.0 - 0.04), -H / 2.0 - 0.004, fz * (D / 2.0 - 0.04))
 			model.add_child(foot)
+	# PHONES is a hole: black inside, a disc just clear of the fascia under the socket's own collar.
+	var hole := MeshInstance3D.new()
+	hole.name = "PhonesHole"
+	var hm := CylinderMesh.new()
+	hm.top_radius = 0.0034
+	hm.bottom_radius = 0.0034
+	hm.height = 0.0004
+	hm.radial_segments = 14
+	hm.rings = 1
+	hole.mesh = hm
+	hole.material_override = black
+	hole.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(PHONES_AT.x, PHONES_AT.y, FRONT + 0.0006))
+	model.add_child(hole)
 	_leds(model)
 	_silkscreen(model)
 	var tris := _dress_keys(host)
@@ -200,7 +216,7 @@ static func _silkscreen(model: Node3D) -> void:
 	phones.position = Vector3(PHONES_AT.x - 0.001, -0.0215, top)
 	model.add_child(phones)
 	var level := _label("LEVEL", 28, PRINT)
-	level.position = Vector3(KNOB_AT.x, -0.0179, top)
+	level.position = Vector3(KNOB_AT.x, KNOB_AT.y + KNOB_RADIUS + 0.0055, top)
 	model.add_child(level)
 	# The back: a plate round the line out, and its legend (facing out of the back: a half turn about Y).
 	var plate := _box(model, "JackPlate", Vector3(0.080, 0.052, 0.002), Vector3(0.124, -0.065, BACK - 0.001), _mat("silver", SILVER, 0.3, 0.4))
@@ -331,24 +347,24 @@ static func _seat_jacks(host: Node3D) -> void:
 	var cyl := MeshInstance3D.new()
 	cyl.name = "KnobCap"
 	var cm := CylinderMesh.new()
-	cm.top_radius = 0.0125
-	cm.bottom_radius = 0.0135
-	cm.height = 0.014
-	cm.radial_segments = 16
+	cm.top_radius = KNOB_RADIUS
+	cm.bottom_radius = KNOB_RADIUS + 0.001
+	cm.height = KNOB_HEIGHT
+	cm.radial_segments = 20
 	cm.rings = 1
 	cyl.mesh = cm
 	cyl.material_override = _mat("knob", Color(0.09, 0.095, 0.105), 0.4, 0.4)
 	# The knob turns about its own +Z: the cylinder's axis (Y) is laid along it, its middle half a height out.
-	cyl.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(0.0, 0.0, 0.007))
+	cyl.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(0.0, 0.0, KNOB_HEIGHT / 2.0))
 	pivot.add_child(cyl)
-	var mark := _box(pivot, "KnobMark", Vector3(0.0025, 0.009, 0.0015), Vector3(0.0, 0.0065, 0.0145), _mat("mark", Color(0.92, 0.92, 0.95)))
+	var mark := _box(pivot, "KnobMark", Vector3(0.003, KNOB_RADIUS * 0.6, 0.0015), Vector3(0.0, KNOB_RADIUS * 0.62, KNOB_HEIGHT + 0.0005), _mat("mark", Color(0.92, 0.92, 0.95)))
 	mark.name = "KnobMark"
 	var shape := knob.get_node("CollisionShape3D") as CollisionShape3D
 	var sb := BoxShape3D.new()
-	sb.size = Vector3(0.027, 0.027, 0.014)
+	sb.size = Vector3(KNOB_RADIUS * 2.0 + 0.002, KNOB_RADIUS * 2.0 + 0.002, KNOB_HEIGHT)
 	shape.shape = sb
-	shape.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, 0.007))
-	knob.engage_radius = 0.03
+	shape.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, KNOB_HEIGHT / 2.0))
+	knob.engage_radius = KNOB_RADIUS + 0.014
 
 
 static func _fit_shapes(host: Node3D) -> void:

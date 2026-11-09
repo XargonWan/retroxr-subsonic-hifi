@@ -59,6 +59,11 @@ func _run() -> void:
 	cam.fov = 38.0
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_front")
+	cam.position = Vector3(0.13, -0.04, 0.34)
+	cam.look_at(Vector3(0.13, -0.04, 0.15))
+	await _shot(vp, "hifi_phones_knob")
+	cam.position = Vector3(0.0, 0.0, 0.66)
+	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	# The search keyboard, and the radio list with the station on air marked.
 	b.pages.push("search", "Search")
 	b.page()["kb"] = [1, 3]
