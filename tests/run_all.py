@@ -21,6 +21,7 @@ MOD = "res://mods/xenu.subsonic/"
 SUITES = [
     ("tests/pure_tests.gd", []),
     ("tests/register_tests.tscn", []),
+    ("tests/hifi_tests.tscn", []),
 ]
 
 
@@ -33,7 +34,7 @@ def run(path: str, extra: list) -> int:
     if extra:
         cmd += ["--"] + extra
     with open(log, "w") as f:
-        rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=300).returncode
+        rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=150).returncode
     text = open(log, errors="replace").read()
     for line in text.splitlines():
         if re.search(r"\[sb-[a-z]+\]", line):

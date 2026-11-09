@@ -20,6 +20,7 @@ const Radio = preload("res://mods/xenu.subsonic/scripts/radio.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Cache = preload("res://mods/xenu.subsonic/scripts/sb_cache.gd")
 const Client = preload("res://mods/xenu.subsonic/scripts/sb_client.gd")
+const OptionsPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
 
 enum Source { NONE, LIBRARY, RADIO }
 
@@ -62,6 +63,7 @@ func _ready() -> void:
 	cache = Cache.open(Config.cache_dir(), Config.cache_bytes())
 	var s := Config.load_all()
 	client.configure(str(s.get("server", "")), str(s.get("user", "")), str(s.get("token", "")), str(s.get("salt", "")))
+	set_quality(int(s.get("quality_kbps", 0)), false)
 	client.auth_failed.connect(func() -> void:
 		print("[Subsonic] %s: the server no longer accepts the saved login" % name)
 		status = "SIGN IN"
@@ -90,6 +92,21 @@ func _log_tag() -> String:
 
 func deck_save_type() -> String:
 	return "xenu.subsonic:hifi"
+
+
+## The TAB menu (the spawn menu asks every object that has this).
+func toggle_options_ui(camera: Node3D) -> void:
+	OptionsPanel.toggle_for(self, camera)
+
+
+## Library tracks are asked of the server in the file's own format (0), or transcoded to mp3 at `kbps`. It applies from
+## the next queue (the cache names a track by its format).
+func set_quality(kbps: int, save := true) -> void:
+	transcode_kbps = maxi(kbps, 0)
+	transcode_format = "mp3" if transcode_kbps > 0 else ""
+	if save:
+		Config.set_value("quality_kbps", transcode_kbps if transcode_kbps > 0 else null)
+		print("[Subsonic] %s: quality %s" % [name, "original" if transcode_kbps == 0 else "mp3 %d kbps" % transcode_kbps])
 
 
 # --- the login -----------------------------------------------------------------------------------------
