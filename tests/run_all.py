@@ -20,6 +20,7 @@ MOD = "res://mods/xenu.subsonic/"
 # (path under the mod, extra args). A .gd runs as --script, a .tscn as a scene.
 SUITES = [
     ("tests/pure_tests.gd", []),
+    ("tests/browser_tests.gd", []),
     ("tests/register_tests.tscn", []),
     ("tests/hifi_tests.tscn", []),
 ]
@@ -52,7 +53,8 @@ def run(path: str, extra: list) -> int:
 
 
 def main() -> int:
-    results = [(p, run(p, e)) for p, e in SUITES]
+    only = sys.argv[1:]          # e.g. `run_all.py browser` runs the suites whose path contains it
+    results = [(p, run(p, e)) for p, e in SUITES if not only or any(o in p for o in only)]
     print()
     for name, rc in results:
         print("%-32s %s" % (name, "ok" if rc == 0 else "FAILED (%d)" % rc))

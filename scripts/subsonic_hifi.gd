@@ -260,6 +260,14 @@ func play() -> void:
 	state_changed.emit()
 
 
+## The OK key on the Now playing page: pause what is on, or carry on.
+func toggle_pause() -> void:
+	if is_playing and not _paused:
+		_on_pause_pressed()
+	else:
+		_on_play_pressed()
+
+
 func stop() -> void:
 	_loading_idx = -1
 	if source == Source.RADIO:

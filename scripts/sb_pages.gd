@@ -44,13 +44,25 @@ func _init() -> void:
 
 # --- the stack -----------------------------------------------------------------------------------------
 
+static var _next_id := 1
+
+
 static func _page(kind: String, title: String, arg: Variant = null) -> Dictionary:
-	return {"kind": kind, "title": title, "arg": arg, "rows": [], "first": 0, "cursor": 0, "loading": false,
+	_next_id += 1
+	return {"id": _next_id, "kind": kind, "title": title, "arg": arg, "rows": [], "first": 0, "cursor": 0, "loading": false,
 		"error": "", "text": ""}
 
 
 func current() -> Dictionary:
 	return stack[stack.size() - 1]
+
+
+## Whether this very page is still on the stack (a reply that comes after the player left it is dropped).
+func has_page(p: Dictionary) -> bool:
+	for q: Dictionary in stack:
+		if q["id"] == p["id"]:
+			return true
+	return false
 
 
 func depth() -> int:
