@@ -19,6 +19,7 @@ MOD = "res://mods/xenu.subsonic/"
 
 # (path under the mod, extra args). A .gd runs as --script, a .tscn as a scene.
 SUITES = [
+    ("tests/pure_tests.gd", []),
     ("tests/register_tests.tscn", []),
 ]
 
