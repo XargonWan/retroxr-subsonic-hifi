@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://cdplayer_0001" path="res://Scenes/Objects/appliances/cd_player.tscn" id="1_cd"]
+[ext_resource type="Script" path="res://mods/xenu.subsonic/scripts/subsonic_hifi.gd" id="2_hifi"]
+
+; The base CD player's scene gives the jacks, LEVEL knob, mains and the transport buttons the shared deck code
+; looks up by name. The script is swapped for ours (a RetroAudioPlayer: no tray, no disc) and the RETRO XR CD
+; model is taken off it (Model has no levels here); the body is built in code by hifi_model.gd.
+[node name="SubsonicHifi" instance=ExtResource("1_cd") groups=["spawned"]]
+script = ExtResource("2_hifi")
+player_label = "NAVI-AZ95"
+
+[node name="Model" parent="." index="0"]
+level_scenes = Array[PackedScene]([])

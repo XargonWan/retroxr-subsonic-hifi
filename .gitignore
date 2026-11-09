@@ -1,0 +1,7 @@
+build/
+.godot/
+*.import
+*.tmp
+.env.local
+src.local/
+dist/
