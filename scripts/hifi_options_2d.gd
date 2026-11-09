@@ -214,7 +214,7 @@ func _set_stations(list: Array) -> void:
 		play.pressed.connect(func() -> void: station_played.emit(url))
 		row.add_child(play)
 		var del := Button.new()
-		del.text = "✕"
+		del.text = "×"
 		del.custom_minimum_size = Vector2(48, 40)
 		del.pressed.connect(func() -> void: station_removed.emit(url))
 		row.add_child(del)

@@ -10,8 +10,9 @@ const Api = preload("res://mods/xenu.subsonic/scripts/sb_api.gd")
 const Radio = preload("res://mods/xenu.subsonic/scripts/radio.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Cache = preload("res://mods/xenu.subsonic/scripts/sb_cache.gd")
+const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 
-const EXPECTED_CASES := 101
+const EXPECTED_CASES := 144
 const SCRATCH := "user://sb_pure_scratch"
 
 var _cases := 0
@@ -39,6 +40,7 @@ func _init() -> void:
 	_radio()
 	_config()
 	_cache()
+	_pages()
 	print("[sb-test] %d cases, %d failed" % [_cases, _failed])
 	if _cases != EXPECTED_CASES:
 		print("[sb-test] FAIL expected %d cases, ran %d (a script error stopped the run?)" % [EXPECTED_CASES, _cases])
@@ -237,3 +239,82 @@ func _cache() -> void:
 	_eq(Array(reopened.trim([])), ["c.mp3"], "recency survives a reopen (index.json)")
 	_eq(Array(reopened.clear(["e.mp3"])), ["d.mp3"], "clear keeps what is protected")
 	_check(not reopened.names().has("index.json"), "the index is not a cached file")
+
+
+func _pages() -> void:
+	var P := Pages.new()
+	_eq(P.current()["kind"], Pages.HOME, "the stack starts at home")
+	_check(not P.pop(), "there is nothing under home")
+	var p := P.push(Pages.ALBUMS, "New albums", "newest", true)
+	_check(P.current() == p and p["loading"], "a pushed page loads")
+	var rows: Array = []
+	for i in 20:
+		rows.append(Pages.row("r%d" % i, "open", i))
+	P.set_rows(p, rows)
+	_check(not p["loading"] and P.visible().size() == Pages.PAGE_ROWS, "set_rows shows a window of 6")
+	_eq(P.page_count(), 4, "20 rows are 4 pages")
+	_eq(P.page_number(), 1, "first page")
+	P.page_move(1)
+	_eq([p["first"], P.page_number()], [6, 2], "page down")
+	_eq(P.visible()[0]["index"], 6, "the window starts at row 6")
+	P.page_move(1)
+	P.page_move(1)
+	P.page_move(1)
+	_eq(p["first"], 14, "the last page ends on the last row (20 - 6)")
+	P.page_move(-1)
+	P.page_move(-1)
+	P.page_move(-1)
+	P.page_move(-1)
+	_eq(p["first"], 0, "page up stops at 0")
+	_eq(p["cursor"], 5, "the cursor stays inside the window it is paged to")
+	p["cursor"] = 0
+	P.cursor_move(1)
+	P.cursor_move(1)
+	_eq(P.cursor_row()["arg"], 2, "the cursor moves down two rows")
+	for i in 8:
+		P.cursor_move(1)
+	_eq([p["cursor"], p["first"]], [10, 5], "the window follows the cursor down")
+	for i in 20:
+		P.cursor_move(-1)
+	_eq([p["cursor"], p["first"]], [0, 0], "and back up")
+	_eq(P.row_at_slot(2)["arg"], 2, "a slot is a row of the window")
+	_eq(p["cursor"], 2, "pointing at a slot puts the cursor there")
+	_check(P.row_at_slot(9).is_empty(), "a slot past the rows is empty")
+	P.set_error(p, "NO LINK")
+	_check(p["rows"].is_empty() and p["error"] == "NO LINK" and not p["loading"], "an error page has no rows")
+	_check(P.pop() and P.current()["kind"] == Pages.HOME, "back to home")
+	P.push(Pages.RADIO, "Radio")
+	P.home()
+	_eq(P.depth(), 1, "home empties the stack")
+
+	var home := Pages.home_rows(true, 2, true)
+	_eq(home.map(func(r: Dictionary) -> String: return r["text"]), ["Now playing", "Artists", "New albums", "Recently played", "Most played", "Random albums", "Starred", "Playlists", "Search", "Radio"], "home when signed in and playing")
+	_eq(home[home.size() - 1]["sub"], "2 stations", "radio row counts the stations")
+	var out := Pages.home_rows(false, 1, false)
+	_eq(out.map(func(r: Dictionary) -> String: return r["text"]), ["Not signed in", "Radio"], "home when not signed in keeps the radio")
+	_eq(out[0]["act"], "none", "and the not-signed-in row does nothing")
+	_eq(Pages.home_rows(true, 1, false)[-1]["sub"], "1 station", "singular")
+	_eq(Pages.letter_rows().size(), 27, "A-Z and #")
+	_eq([Pages.letter_of("ABBA"), Pages.letter_of("The Beatles"), Pages.letter_of("A Perfect Circle"), Pages.letter_of("2Pac"), Pages.letter_of("A"), Pages.letter_of("  ")], ["A", "B", "P", "#", "A", "#"], "the sort letter skips an article, '#' for the rest")
+	var artists := [{"id": "1", "name": "Bjork", "albums": 1}, {"id": "2", "name": "ABBA", "albums": 3}, {"id": "3", "name": "The Beatles", "albums": 2}, {"id": "4", "name": "Bon Jovi", "albums": 0}]
+	_eq(Pages.artist_rows(artists, "B").map(func(r: Dictionary) -> String: return r["text"]), ["Bjork", "Bon Jovi", "The Beatles"], "artists of a letter, sorted ignoring case")
+	_eq(Pages.artist_rows(artists, "A")[0]["sub"], "3 albums", "an artist row counts albums")
+	var alb := Pages.album_rows([{"id": "a", "name": "Arrival", "artist": "ABBA", "year": 1976}, {"id": "b", "name": "Untitled", "artist": "", "year": 0}])
+	_eq([alb[0]["sub"], alb[1]["sub"]], ["ABBA · 1976", ""], "album rows: artist and year")
+	var songs := [{"track": 1, "title": "One", "artist": "A", "duration": 65}, {"track": 0, "title": "Two", "artist": "", "duration": 3}]
+	var sr := Pages.song_rows(songs)
+	_eq([sr.size(), sr[0]["act"], sr[1]["text"], sr[1]["sub"], sr[2]["text"], sr[2]["sub"], sr[2]["arg"]], [3, "play_all", "1. One", "A · 1:05", "Two", "0:03", 1], "a song page: play all, then the songs by index")
+	_eq(Pages.song_rows([]).size(), 0, "no songs, no rows")
+	var st := Pages.station_rows([{"name": "A", "url": "u1"}, {"name": "B", "url": "u2"}], "u2")
+	_eq([st[0]["text"], st[1]["text"]], ["A", "● B"], "the station on air is marked")
+	_eq(Pages.station_rows([])[0]["act"], "none", "no stations: a hint")
+	var res := Pages.result_rows({"artists": [{"id": "x", "name": "Aha"}], "albums": [{"id": "y", "name": "Hunting High", "artist": "Aha"}], "songs": [{"title": "Take On Me", "artist": "Aha", "album": "HH"}]})
+	_eq(res.map(func(r: Dictionary) -> String: return r["act"]), ["artist", "album", "play_result"], "search results: artists, albums, songs")
+	_eq(Pages.result_rows({"artists": [], "albums": [], "songs": []})[0]["text"], "Nothing found", "no results")
+	_eq(Pages.type_key("ab", "C"), "abc", "a key types lower case")
+	_eq(Pages.type_key("ab", "DEL"), "a", "DEL")
+	_eq(Pages.type_key("", "DEL"), "", "DEL on nothing")
+	_eq(Pages.type_key("a", "SPACE"), "a ", "SPACE")
+	_eq(Pages.type_key("", "SPACE"), "", "no leading space")
+	_eq(Pages.type_key("a", "GO"), "a", "GO is the caller's")
+	_eq(Pages.type_key("x".repeat(40), "A"), "x".repeat(40), "text is capped at 40")
