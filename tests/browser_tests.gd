@@ -8,7 +8,7 @@ const Browser = preload("res://mods/xenu.subsonic/scripts/hifi_browser.gd")
 const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 
-const EXPECTED_CASES := 56
+const EXPECTED_CASES := 64
 
 var _cases := 0
 var _failed := 0
@@ -140,6 +140,7 @@ func _init() -> void:
 	_search(b, h)
 	_radio_and_misc(b, h)
 	_media_modes(b, h)
+	_play_as_ok(b, h)
 	_stale(h)
 	print("[sb-browser] %d cases, %d failed" % [_cases, _failed])
 	if _cases != EXPECTED_CASES:
@@ -291,6 +292,31 @@ func _radio_and_misc(b: RefCounted, h: FakeHifi) -> void:
 	b.go_home()
 	b.activate({"text": "Playlists", "act": "open", "arg": Pages.PLAYLISTS})
 	_check(str(b.page()["error"]).length() > 0 and (b.page()["rows"] as Array).is_empty(), "a failed fetch shows its error and no rows")
+
+
+func _play_as_ok(b: RefCounted, h: FakeHifi) -> void:
+	h.mode = 2
+	b.go_home()
+	_check(not b.has_armed_row() and not b.try_activate(), "a page the keys have not touched has nothing chosen")
+	b.nav("down")
+	_check(b.has_armed_row(), "UP or DOWN chooses a row")
+	_check(b.try_activate() and b.page()["kind"] == Pages.ALBUMS, "PLAY as OK opens the row it was moved to (New albums)")
+	_check(not b.has_armed_row(), "and the choice is used up")
+	b.go_home()
+	b.nav("down")
+	b.nav("back")
+	_check(not b.has_armed_row(), "BACK clears the choice")
+	b.go_home()
+	b.activate({"text": "Search", "act": "open", "arg": Pages.SEARCH})
+	b.nav("down")
+	b.nav("right")
+	b.nav("up")
+	_eq(b.page()["kb"], [0, 1], "on the keyboard REW/FF are left and right, the column up and down")
+	_check(b.try_activate() and b.page()["text"] == "2", "and PLAY types the key under the cursor")
+	b.go_home()
+	b.activate({"text": "Now playing", "act": "open", "arg": Pages.NOW})
+	b.nav("down")
+	_check(not b.has_armed_row(), "on Now playing PLAY is always play / pause")
 
 
 func _media_modes(b: RefCounted, h: FakeHifi) -> void:

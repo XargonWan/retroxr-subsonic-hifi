@@ -51,7 +51,7 @@ static var _next_id := 1
 static func _page(kind: String, title: String, arg: Variant = null) -> Dictionary:
 	_next_id += 1
 	return {"id": _next_id, "kind": kind, "title": title, "arg": arg, "rows": [], "first": 0, "cursor": 0, "loading": false,
-		"error": "", "text": ""}
+		"error": "", "text": "", "armed": false}
 
 
 func current() -> Dictionary:

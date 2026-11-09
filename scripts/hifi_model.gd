@@ -16,48 +16,53 @@
 extends RefCounted
 
 const W := 0.43
-const H := 0.28
+const H := 0.24
 const D := 0.30
 const FRONT := D / 2.0
 const BACK := -D / 2.0
 
-## The LCD's glass and the centre of its window.
+## The layout is the player's mockup, measured in its pixels (709 x 391 over the 0.43 m fascia, 0.606 mm a pixel).
+## The LCD's glass and the centre of its window (top left).
 const SCREEN := Vector2(0.200, 0.100)
-const SCREEN_AT := Vector2(-0.095, 0.066)
+const SCREEN_AT := Vector2(-0.0945, 0.0457)
 
-## The cassette bay: the opening's centre and size (a cassette is 100.4 x 63.8 mm) and its EJECT key.
-const TAPE_AT := Vector2(0.123, 0.068)
-const TAPE_OPENING := Vector2(0.114, 0.074)
-const TAPE_EJECT_AT := Vector2(0.2015, 0.036)
-## The CD bay: the slot's centre and width (a disc is 120 mm) and its EJECT key.
-const CD_AT := Vector2(-0.035, -0.095)
-const CD_SLOT := Vector2(0.150, 0.008)
-const CD_EJECT_AT := Vector2(0.175, -0.095)
+## The cassette bay (top right): the opening's centre and size (a cassette is 100.4 x 63.8 mm) and its EJECT key.
+const TAPE_AT := Vector2(0.1207, 0.0479)
+const TAPE_OPENING := Vector2(0.120, 0.080)
+const TAPE_EJECT_AT := Vector2(0.200, 0.0167)
+## The CD bay (across the foot): the plate, the slot in it (a disc is 120 mm) and its EJECT key.
+const CD_PLATE_AT := Vector2(-0.043, -0.0857)
+const CD_PLATE := Vector2(0.317, 0.0364)
+const CD_AT := Vector2(-0.0634, -0.0848)
+const CD_SLOT := Vector2(0.148, 0.009)
+const CD_EJECT_AT := Vector2(0.144, -0.0857)
 
 ## A key's cap (w x h x depth) and how far it stands out of the fascia at rest.
 const CAP := Vector3(0.0215, 0.0150, 0.0060)
 const PROUD := 0.0030
 const TRAVEL := 0.0015
-## The key rows under the screen: the first column's centre, the pitch, and the two rows' heights.
-const KEY_X0 := -0.1735
+## The transport row under the screen: the first column's centre, the pitch and the row's height.
+const KEY_X0 := -0.1747
 const KEY_PITCH := 0.0262
-const ROW_NAV_Y := -0.0125
-const ROW_TRANSPORT_Y := -0.0385
+const ROW_TRANSPORT_Y := -0.0245
+## The navigation keys, a column at the right of the screen: x, and the first key's y and the pitch down.
+const NAV_X := 0.0264
+const NAV_Y0 := 0.0942
+const NAV_PITCH := 0.0188
 
-## MODE (orange in the sketch): its key and, above it, three LEDs with their names.
-const MODE_AT := Vector2(0.052, -0.030)
+## MODE: its key and, above it, three LEDs with their names.
+const MODE_AT := Vector2(0.0524, -0.044)
 const MODE_CAP := Vector3(0.034, 0.016, 0.006)
-const LED_Y := -0.0105
-const LED_XS := [0.038, 0.0535, 0.069]
+const LED_Y := -0.0252
+const LED_XS := [0.0385, 0.0525, 0.0675]
 const LED_NAMES := ["CD", "TAPE", "NET"]
 
-const PHONES_AT := Vector2(0.182, -0.026)
-const KNOB_AT := Vector2(0.134, -0.026)
+const PHONES_AT := Vector2(0.1806, -0.041)
+const KNOB_AT := Vector2(0.135, -0.0416)
 
-## The nav keys, in order along their row (left to right): node name, glyph.
-const NAV_ROW := [["MenuButton", "menu"], ["BackButton", "left"], ["LeftButton", "rew"], ["UpButton", "up"],
-	["DownButton", "down"], ["RightButton", "ff"], ["OkButton", "ok"]]
-## The transport keys: the base scene's own (REW and FF are kept now: a tape and a disc scan), in order along the row.
+## The navigation keys, top to bottom: node name, glyph. (There is no OK: PLAY opens the row the cursor was moved to.)
+const NAV_COLUMN := [["MenuButton", "menu"], ["BackButton", "left"], ["UpButton", "up"], ["DownButton", "down"]]
+## The transport keys: the base scene's own (REW and FF are kept: a tape and a disc scan), in order along the row.
 const TRANSPORT_ROW := [["RewindButton", "rew"], ["PrevButton", "prev"], ["PlayButton", "play"], ["PauseButton", "pause"],
 	["StopButton", "stop"], ["NextButton", "next"], ["FastForwardButton", "ff"]]
 
@@ -126,10 +131,10 @@ static func build(host: Node3D, model: Node3D) -> int:
 	# The LCD: a black bezel box standing 1.5 mm out of the fascia, the glass set into it.
 	_box(model, "Bezel", Vector3(SCREEN.x + 0.016, SCREEN.y + 0.016, 0.0030), Vector3(SCREEN_AT.x, SCREEN_AT.y, FRONT + 0.0015), black)
 	# The cassette bay: a dark pocket the cassette goes into, in a thin frame.
-	_box(model, "TapeFrame", Vector3(TAPE_OPENING.x + 0.010, TAPE_OPENING.y + 0.010, 0.0016), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
+	_box(model, "TapeFrame", Vector3(TAPE_OPENING.x + 0.008, TAPE_OPENING.y + 0.008, 0.0016), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
 	_box(model, "TapePocket", Vector3(TAPE_OPENING.x, TAPE_OPENING.y, 0.0022), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0011), black)
 	# The CD bay: a plate across the foot with the slot in it.
-	_box(model, "CdPlate", Vector3(0.320, 0.036, 0.0016), Vector3(CD_AT.x + 0.020, CD_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
+	_box(model, "CdPlate", Vector3(CD_PLATE.x, CD_PLATE.y, 0.0016), Vector3(CD_PLATE_AT.x, CD_PLATE_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
 	_box(model, "CdSlot", CD_SLOT_BOX, Vector3(CD_AT.x, CD_AT.y, FRONT + 0.0014), black)
 	for fx in [-1.0, 1.0]:
 		for fz in [-1.0, 1.0]:
@@ -152,12 +157,12 @@ static func build(host: Node3D, model: Node3D) -> int:
 	_fit_shapes(host)
 	var cord := Node3D.new()
 	cord.name = "PowerCordExit"
-	cord.position = Vector3(-0.15, -0.095, BACK)
+	cord.position = Vector3(-0.15, -0.08, BACK)
 	model.add_child(cord)
 	return tris + _triangles(model)
 
 
-const CD_SLOT_BOX := Vector3(0.150, 0.0075, 0.0022)
+const CD_SLOT_BOX := Vector3(CD_SLOT.x, CD_SLOT.y, 0.0022)
 
 
 ## The three mode LEDs (small boxes on the fascia, named Led_CD / Led_TAPE / Led_NET), all dark; the unit lights one.
@@ -170,38 +175,38 @@ static func _leds(model: Node3D) -> void:
 static func _silkscreen(model: Node3D) -> void:
 	var top := FRONT + 0.0004
 	var left := _label("SUBSONIC  Hi-Fi", 44, PRINT)
-	left.position = Vector3(-0.150, 0.1325, top)
+	left.position = Vector3(-0.148, 0.110, top)
 	model.add_child(left)
 	var right := _label("NAVI-AZ95", 44, PRINT)
-	right.position = Vector3(0.150, 0.1325, top)
+	right.position = Vector3(0.1476, 0.110, top)
 	model.add_child(right)
 	var tape := _label("CASSETTE", 30, Color(0.34, 0.35, 0.40))
-	tape.position = Vector3(TAPE_AT.x, TAPE_AT.y - TAPE_OPENING.y / 2.0 - 0.0105, top)
+	tape.position = Vector3(TAPE_AT.x, TAPE_AT.y - TAPE_OPENING.y / 2.0 - 0.0076, top)
 	model.add_child(tape)
 	var eject_t := _label("EJECT", 26, PRINT)
-	eject_t.position = Vector3(TAPE_EJECT_AT.x, TAPE_EJECT_AT.y - 0.0135, top)
+	eject_t.position = Vector3(TAPE_EJECT_AT.x, TAPE_EJECT_AT.y - 0.0139, top)
 	model.add_child(eject_t)
 	var cd := _label("COMPACT  DISC", 30, Color(0.34, 0.35, 0.40))
-	cd.position = Vector3(CD_AT.x - 0.035, CD_AT.y + 0.0265, top)
+	cd.position = Vector3(-0.0937, -0.059, top)
 	model.add_child(cd)
 	var eject_c := _label("EJECT", 26, PRINT)
-	eject_c.position = Vector3(CD_EJECT_AT.x, CD_EJECT_AT.y - 0.0135, top)
+	eject_c.position = Vector3(CD_EJECT_AT.x, CD_EJECT_AT.y - 0.0128, top)
 	model.add_child(eject_c)
 	for i in 3:
 		var t := _label(LED_NAMES[i], 22, PRINT)
 		t.position = Vector3(LED_XS[i], LED_Y + 0.0072, top)
 		model.add_child(t)
 	var phones := _label("PHONES", 28, PRINT)
-	phones.position = Vector3(PHONES_AT.x - 0.001, PHONES_AT.y + 0.0185, top)
+	phones.position = Vector3(PHONES_AT.x - 0.001, -0.0215, top)
 	model.add_child(phones)
 	var level := _label("LEVEL", 28, PRINT)
-	level.position = Vector3(KNOB_AT.x, KNOB_AT.y + 0.0225, top)
+	level.position = Vector3(KNOB_AT.x, -0.0179, top)
 	model.add_child(level)
 	# The back: a plate round the line out, and its legend (facing out of the back: a half turn about Y).
-	var plate := _box(model, "JackPlate", Vector3(0.080, 0.052, 0.002), Vector3(0.124, -0.080, BACK - 0.001), _mat("silver", SILVER, 0.3, 0.4))
+	var plate := _box(model, "JackPlate", Vector3(0.080, 0.052, 0.002), Vector3(0.124, -0.065, BACK - 0.001), _mat("silver", SILVER, 0.3, 0.4))
 	plate.name = "JackPlate"
 	# [text, x, y]: the legend above the jacks, and L / R below them.
-	for spec: Array in [["LINE OUT", 0.124, -0.0595], ["L", 0.110, -0.0945], ["R", 0.138, -0.0945]]:
+	for spec: Array in [["LINE OUT", 0.124, -0.0445], ["L", 0.110, -0.0795], ["R", 0.138, -0.0795]]:
 		var t := _label(str(spec[0]), 30 if spec[0] == "LINE OUT" else 36, PRINT)
 		t.rotation = Vector3(0.0, PI, 0.0)
 		t.position = Vector3(float(spec[1]), float(spec[2]), BACK - 0.0022)
@@ -222,7 +227,7 @@ static func _label(text: String, size: int, color: Color) -> Label3D:
 
 # --- keys ----------------------------------------------------------------------------------------------
 
-## Where a key stands: column `i` of a row at height `y`, in the unit's frame, on the fascia.
+## Where a key of the transport row stands: column `i` at height `y`, in the unit's frame, on the fascia.
 static func key_at(i: int, y: float) -> Vector3:
 	return Vector3(KEY_X0 + i * KEY_PITCH, y, FRONT)
 
@@ -236,12 +241,12 @@ static func _dress_keys(host: Node3D) -> int:
 		var spec: Array = TRANSPORT_ROW[i]
 		var b := host.get_node(str(spec[0])) as VRButton
 		tris += _cap(b, key_at(i, ROW_TRANSPORT_Y), str(spec[1]))
-	for i in NAV_ROW.size():
-		var spec: Array = NAV_ROW[i]
+	for i in NAV_COLUMN.size():
+		var spec: Array = NAV_COLUMN[i]
 		var b := template.duplicate() as VRButton
 		b.name = str(spec[0])
 		host.add_child(b)
-		tris += _cap(b, key_at(i, ROW_NAV_Y), str(spec[1]))
+		tris += _cap(b, Vector3(NAV_X, NAV_Y0 - i * NAV_PITCH, FRONT), str(spec[1]))
 	var mode := template.duplicate() as VRButton
 	mode.name = "ModeButton"
 	host.add_child(mode)
@@ -313,8 +318,8 @@ static func _seat_jacks(host: Node3D) -> void:
 	# The line out on the back (white L, red R), as the base CD player has it: the zones stand 9 mm out of the back.
 	var l := host.get_node("AudioLOut") as Node3D
 	var r := host.get_node("AudioROut") as Node3D
-	l.position = Vector3(0.110, -0.080, BACK - 0.009)
-	r.position = Vector3(0.138, -0.080, BACK - 0.009)
+	l.position = Vector3(0.110, -0.065, BACK - 0.009)
+	r.position = Vector3(0.138, -0.065, BACK - 0.009)
 	# PHONES on the front, its plug seating flush with the fascia, and the LEVEL knob beside it.
 	var ph := host.get_node("PhonesOut") as Node3D
 	ph.position = Vector3(PHONES_AT.x, PHONES_AT.y, FRONT + 0.001 - 0.00075)

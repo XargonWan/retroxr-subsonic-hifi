@@ -16,7 +16,8 @@ protocol and the projects this mod talks to; the mod is not affiliated with or e
 
 The unit is a combination set. MODE steps CD -> TAPE -> NET, each with its LED. A disc goes in the slot at the bottom,
 an audio cassette in the bay at the top right (both are RetroXR's own audio discs and cassettes); EJECT is beside each.
-With nothing playing, putting a disc or a cassette in takes the unit to that function; while something plays it waits
+There is no OK key: move the cursor with UP / DOWN and PLAY opens or plays the row it is on (REW / FF are LEFT / RIGHT
+on the search keyboard). The screen is touch / laser as well. With nothing playing, putting a disc or a cassette in takes the unit to that function; while something plays it waits
 for MODE. NET is the music server and the radio. The screen's retro LCD look can be switched off in the TAB menu (Unit).
 
 Now playing shows the cover, title, artist, album, format, what comes next, a seekable bar and the transport

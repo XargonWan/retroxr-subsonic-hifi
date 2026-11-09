@@ -5,7 +5,7 @@ extends Node
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
 const HifiPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
-const EXPECTED_CASES := 83
+const EXPECTED_CASES := 87
 const SCRATCH := "user://sb_hifi_scratch"
 
 var _cases := 0
@@ -132,7 +132,7 @@ func _body(hifi: SubsonicHifi) -> void:
 	_check(gone, "the base scene's tray-era keys are gone (no invisible hit boxes in front of the fascia)")
 	var ok_keys := true
 	var xs: Array[float] = []
-	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW, [["ModeButton"], ["TapeEjectButton"], ["CdEjectButton"]]]:
+	for row: Array in [Body.NAV_COLUMN, Body.TRANSPORT_ROW, [["ModeButton"], ["TapeEjectButton"], ["CdEjectButton"]]]:
 		for spec: Array in row:
 			var b := hifi.get_node_or_null(str(spec[0])) as VRButton
 			if b == null:
@@ -145,7 +145,7 @@ func _body(hifi: SubsonicHifi) -> void:
 	_check(ok_keys, "every key exists, faces front, stands on the fascia and wears a cap")
 	var overlap := false
 	var spots := {}
-	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW, [["ModeButton"], ["TapeEjectButton"], ["CdEjectButton"]]]:
+	for row: Array in [Body.NAV_COLUMN, Body.TRANSPORT_ROW, [["ModeButton"], ["TapeEjectButton"], ["CdEjectButton"]]]:
 		for spec: Array in row:
 			var b := hifi.get_node(str(spec[0])) as VRButton
 			for k: Vector2 in spots:
@@ -165,8 +165,18 @@ func _body(hifi: SubsonicHifi) -> void:
 	down.button_pressed.emit()
 	down.button_pressed.emit()
 	_check(hifi.browser.page()["cursor"] == 1, "the keys reach the browser (down, down, up: row 1; was %d)" % before)
+	# PLAY is OK once the cursor has been moved from the unit's keys.
+	var played: Array = []
+	hifi.browser.go_home()
+	_check(not hifi.browser.has_armed_row(), "a fresh page has no chosen row, so PLAY plays")
+	down.button_pressed.emit()
+	_check(hifi.browser.has_armed_row(), "moving the cursor with DOWN chooses a row")
+	hifi.browser.go_home()
+	hifi.is_playing = false
+	_check(hifi.osd == "", "no LEVEL word is on the screen from the unit starting up")
 	var knob := hifi.get_node("LevelKnob") as VRKnob
 	knob.set_value(0.4)
+	_check(hifi.osd.begins_with("LEVEL 40%"), "turning the LEVEL knob shows its setting on the screen")
 	_check(is_equal_approx(hifi.phones_level, 0.4), "the LEVEL knob sets the headphones' level")
 	var sv := hifi.get_node("Screen/Viewport") as SubViewport
 	_check(sv != null and sv.get_child_count() == 1 and sv.get_child(0).get("browser") == hifi.browser, "the screen is up and bound to the browser")

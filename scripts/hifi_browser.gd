@@ -59,6 +59,11 @@ func refresh_home() -> void:
 ## keyboard all four move over the keys.
 func nav(cmd: String) -> void:
 	var p := page()
+	# A cursor moved from the unit's own keys is a choice: PLAY then acts on it (try_activate).
+	if cmd in ["up", "down", "left", "right"]:
+		p["armed"] = true
+	elif cmd == "ok" or cmd == "back" or cmd == "menu":
+		p["armed"] = false
 	if p["kind"] == Pages.SEARCH:
 		_keyboard_nav(p, cmd)
 		return
@@ -84,6 +89,20 @@ func nav(cmd: String) -> void:
 		"menu":
 			go_home()
 	changed.emit()
+
+
+## Whether the cursor was moved by the unit's keys on this page and not yet used.
+func has_armed_row() -> bool:
+	var p := page()
+	return bool(p.get("armed", false)) and p["kind"] != Pages.NOW
+
+
+## PLAY as OK: act on the row (or the keyboard key) the cursor was moved to. False if there is nothing chosen.
+func try_activate() -> bool:
+	if not has_armed_row():
+		return false
+	nav("ok")
+	return true
 
 
 func back() -> void:

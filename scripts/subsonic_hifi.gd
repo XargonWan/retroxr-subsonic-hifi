@@ -151,8 +151,7 @@ func _setup_loader() -> void:
 	set_phones_level(knob.value)
 	_build_bays()
 	browser = Browser.new(self)
-	for spec: Array in [["MenuButton", "menu"], ["BackButton", "back"], ["LeftButton", "left"], ["UpButton", "up"],
-			["DownButton", "down"], ["RightButton", "right"], ["OkButton", "ok"]]:
+	for spec: Array in [["MenuButton", "menu"], ["BackButton", "back"], ["UpButton", "up"], ["DownButton", "down"]]:
 		var cmd: String = spec[1]
 		(get_node(str(spec[0])) as VRButton).button_pressed.connect(func() -> void:
 			if _mains_gate(cmd.to_upper()):
@@ -283,6 +282,8 @@ func set_quality(kbps: int, save := true) -> void:
 ## affected by it (as the CD player's is not): the line out is at full level and the set or the amplifier has the volume.
 func set_phones_level(v: float) -> void:
 	super.set_phones_level(v)
+	if not _mode_ready:
+		return              # the knob being set up with the unit, not turned
 	var text := "LEVEL %d%%" % roundi(phones_level * 100.0)
 	osd = text if _via_phones else text + " (PHONES)"
 	print("[Subsonic] %s: LEVEL knob %.2f%s" % [name, phones_level, "" if _via_phones else " (nothing in PHONES: no change to the line out)"])
@@ -295,6 +296,31 @@ func set_phones_level(v: float) -> void:
 
 
 # --- the three functions ----------------------------------------------------------------------------------
+
+## PLAY is also OK: once the cursor has been moved with UP / DOWN it opens or plays the row it is on (there is no OK key).
+## With the cursor untouched it plays and resumes as ever.
+func _on_play_pressed() -> void:
+	if browser != null and mains_live() and browser.has_armed_row():
+		_log_event("pressed PLAY as OK")
+		browser.try_activate()
+		return
+	super._on_play_pressed()
+
+
+## REW and FF are LEFT and RIGHT on the search keyboard; everywhere else they wind, as on any deck.
+func _on_rewind_pressed() -> void:
+	if browser != null and mains_live() and browser.page()["kind"] == "search":
+		browser.nav("left")
+		return
+	super._on_rewind_pressed()
+
+
+func _on_ff_pressed() -> void:
+	if browser != null and mains_live() and browser.page()["kind"] == "search":
+		browser.nav("right")
+		return
+	super._on_ff_pressed()
+
 
 ## MODE: CD -> TAPE -> NET -> CD ...
 func cycle_mode() -> void:

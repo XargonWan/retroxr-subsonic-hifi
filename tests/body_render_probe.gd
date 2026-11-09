@@ -55,7 +55,7 @@ func _run() -> void:
 		{"track": 2, "title": "Dancing Queen", "artist": "ABBA", "duration": 231},
 		{"track": 3, "title": "My Love, My Life", "artist": "ABBA", "duration": 233}], "▶ Play album"))
 	b.changed.emit()
-	cam.position = Vector3(0.0, 0.0, 0.72)
+	cam.position = Vector3(0.0, 0.0, 0.66)
 	cam.fov = 38.0
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_front")
@@ -88,7 +88,7 @@ func _run() -> void:
 	h.repeat = 1
 	b.go_home()
 	b.activate({"text": "Now playing", "act": "open", "arg": "now"})
-	cam.position = Vector3(0.0, 0.0, 0.72)
+	cam.position = Vector3(0.0, 0.0, 0.66)
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_now_library")
 	h.source = SubsonicHifi.Source.RADIO
