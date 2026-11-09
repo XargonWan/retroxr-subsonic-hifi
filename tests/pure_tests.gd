@@ -11,7 +11,7 @@ const Radio = preload("res://mods/xenu.subsonic/scripts/radio.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Cache = preload("res://mods/xenu.subsonic/scripts/sb_cache.gd")
 
-const EXPECTED_CASES := 98
+const EXPECTED_CASES := 101
 const SCRATCH := "user://sb_pure_scratch"
 
 var _cases := 0
@@ -140,6 +140,9 @@ func _radio() -> void:
 	_eq(Radio.azuracast_nowplaying_url("https://radio.example.org/listen/radiodrome/radio.mp3"), "https://radio.example.org/api/nowplaying/radiodrome", "stream url -> nowplaying api")
 	_eq(Radio.azuracast_nowplaying_url("https://example.org/stream.mp3"), "", "not an AzuraCast address")
 	_eq(Radio.azuracast_nowplaying_url("ftp://x/public/y"), "", "wrong scheme")
+	_check(Radio.is_azuracast_page("https://r.org/public/radiodrome") and Radio.is_azuracast_page("https://r.org/public/radiodrome/embed"), "a public player page is recognised")
+	_check(not Radio.is_azuracast_page("https://r.org/listen/radiodrome/radio.mp3") and not Radio.is_azuracast_page("https://r.org/public/radiodrome/playlist.m3u"), "a stream and a playlist are not pages")
+	_check(not Radio.is_azuracast_page("https://x.org/stream.mp3"), "an ordinary address is not a page")
 	var np := Radio.parse_azuracast({"station": {"name": "RADIODROME", "listen_url": "https://r/listen/x/radio.mp3"},
 		"now_playing": {"elapsed": 237, "duration": 671, "song": {"artist": "The Chemical Brothers", "title": "Push the Button", "text": "The Chemical Brothers - Push the Button", "art": "https://r/art/1"}},
 		"playing_next": {"song": {"text": "Next - Song"}}, "live": {"is_live": false}})

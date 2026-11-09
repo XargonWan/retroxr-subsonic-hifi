@@ -66,6 +66,8 @@ func _run() -> void:
 			await _library()
 	if not radio.is_empty():
 		await _radio(radio)
+	if OS.get_environment("SB_LIVE_PLAY") == "1":
+		await _object(url, user, pw, radio)
 	_say("%d failure(s)" % _fails)
 	get_tree().quit(1 if _fails > 0 else 0)
 
@@ -124,3 +126,49 @@ func _radio(public_url: String) -> void:
 	_ok(r[0] and Radio.parse_m3u(r[1]).size() > 0, "its playlist.m3u lists a stream")
 	r = await _await_call(func(cb: Callable) -> void: _client.get_text(public_url.rstrip("/") + "/playlist.pls", cb))
 	_ok(r[0] and Radio.parse_pls(r[1]).size() > 0, "its playlist.pls lists a stream")
+
+
+## The object: sign in through it, play the library track from the cache, then tune the radio.
+func _object(url: String, user: String, pw: String, radio: String) -> void:
+	var scene := load("res://mods/xenu.subsonic/scenes/subsonic_hifi.tscn") as PackedScene
+	var hifi := scene.instantiate() as SubsonicHifi
+	add_child(hifi)
+	await get_tree().process_frame
+	_ok(hifi._vlc != null, "libVLC is available to the deck")
+	if hifi._vlc == null:
+		return
+	if not url.is_empty():
+		hifi.set_server(url)
+		var done := {"d": false, "ok": false, "m": ""}
+		hifi.sign_in(user, pw, func(ok: bool, m: String) -> void:
+			done["d"] = true
+			done["ok"] = ok
+			done["m"] = m)
+		while not done["d"]:
+			await get_tree().process_frame
+		_ok(done["ok"], "the object signs in (%s)" % done["m"])
+		var r := await _await_call(func(cb: Callable) -> void: hifi.client.call_api(Api.get_album_list("newest", 5), cb))
+		var albums := Api.album_list(r[1])
+		r = await _await_call(func(cb: Callable) -> void: hifi.client.call_api(Api.get_album(albums[0]["id"]), cb))
+		var songs: Array = Api.album_songs(r[1])["songs"]
+		hifi.play_songs(songs, 0)
+		var t := 0.0
+		while not hifi.is_playing and t < 90.0:
+			await get_tree().process_frame
+			t += get_process_delta_time()
+		_ok(hifi.is_playing, "the deck plays the first track once it is cached (status '%s', %.1f s)" % [hifi.status, t])
+		await get_tree().create_timer(4.0).timeout
+		var pos := hifi._vlc_time_sec()
+		_ok(pos > 2.0, "and the position advances (%.1f s)" % pos)
+		_ok(hifi.now_playing().get("title", "") == songs[0]["title"], "now_playing() names the track")
+		hifi.stop()
+		_ok(not hifi.is_playing, "STOP stops it")
+	if not radio.is_empty():
+		hifi.play_station({"name": "RADIODROME", "url": radio})
+		await get_tree().create_timer(8.0).timeout
+		_ok(hifi.is_playing, "the radio plays (status '%s')" % hifi.status)
+		_ok(not hifi.radio_info.is_empty(), "and its now-playing is read: %s - %s" % [hifi.radio_info.get("artist", ""), hifi.radio_info.get("title", "")])
+		var pos2 := hifi._vlc_time_sec()
+		_say("radio position %.1f s" % pos2)
+		hifi.stop()
+	hifi.queue_free()

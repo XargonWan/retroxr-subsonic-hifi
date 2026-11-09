@@ -34,7 +34,7 @@ def main() -> int:
     os.makedirs(OUT, exist_ok=True)
     log = os.path.join(OUT, "live_probe.log")
     host = os.environ.get("HOST", "1") == "1"
-    pass_through = ["SB_LIVE_URL", "SB_LIVE_USER", "SB_LIVE_PASS", "SB_LIVE_RADIO"]
+    pass_through = ["SB_LIVE_URL", "SB_LIVE_USER", "SB_LIVE_PASS", "SB_LIVE_RADIO", "SB_LIVE_PLAY"]
     cmd = []
     if host:
         # flatpak-spawn only forwards what --env= names.

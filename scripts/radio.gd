@@ -102,6 +102,16 @@ static func azuracast_nowplaying_url(url: String) -> String:
 	return ""
 
 
+## Whether the address is an AzuraCast public player PAGE (https://host/public/<shortcode>), which is HTML, not a
+## stream: its stream is the `listen_url` its now-playing API names.
+static func is_azuracast_page(url: String) -> bool:
+	var rest := url.get_slice("://", 1) if url.contains("://") else ""
+	var host := rest.get_slice("/", 0)
+	var parts := rest.get_slice("?", 0).trim_prefix(host).split("/", false)
+	return parts.size() >= 2 and parts[0] == "public" and not azuracast_nowplaying_url(url).is_empty() \
+		and (parts.size() == 2 or parts[2] in ["embed", "history", "schedule", "podcasts", "requests"])
+
+
 ## What AzuraCast's nowplaying JSON says: {station, listen_url, artist, title, album, art, elapsed, duration,
 ## next_title, is_live}. {} when it is not that JSON.
 static func parse_azuracast(data: Variant) -> Dictionary:
