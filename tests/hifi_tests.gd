@@ -3,8 +3,9 @@
 extends Node
 
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
+const Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
 const HifiPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
-const EXPECTED_CASES := 60
+const EXPECTED_CASES := 83
 const SCRATCH := "user://sb_hifi_scratch"
 
 var _cases := 0
@@ -110,6 +111,7 @@ func _run() -> void:
 	_check(not Config.has_login(Config.load_all()), "sign out forgets the key")
 	# The body
 	_body(hifi)
+	await _modes(hifi)
 	await _stations(hifi, ui)
 	await _now_playing(hifi)
 	# The panel hides
@@ -123,15 +125,14 @@ func _run() -> void:
 
 
 func _body(hifi: SubsonicHifi) -> void:
-	var Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
 	_check(hifi.body_triangles > 100 and hifi.body_triangles < 2000, "the body is a few hundred triangles, under the 2000 budget (%d)" % hifi.body_triangles)
 	var gone := true
-	for n: String in ["OpenButton", "RewindButton", "FastForwardButton", "RepeatButton", "ShuffleButton"]:
+	for n: String in ["OpenButton", "RepeatButton", "ShuffleButton"]:
 		gone = gone and hifi.get_node_or_null(n) == null
 	_check(gone, "the base scene's tray-era keys are gone (no invisible hit boxes in front of the fascia)")
 	var ok_keys := true
 	var xs: Array[float] = []
-	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW]:
+	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW, [["ModeButton"], ["TapeEjectButton"], ["CdEjectButton"]]]:
 		for spec: Array in row:
 			var b := hifi.get_node_or_null(str(spec[0])) as VRButton
 			if b == null:
@@ -141,10 +142,10 @@ func _body(hifi: SubsonicHifi) -> void:
 			ok_keys = ok_keys and b.transform.basis.y.is_equal_approx(Vector3(0, 0, 1)) \
 				and is_equal_approx(b.position.z, Body.FRONT) and absf(b.position.x) < Body.W / 2.0 - Body.CAP.x / 2.0
 			ok_keys = ok_keys and b.get_node("ButtonMesh").visible and b.get_node("ButtonMesh").mesh is BoxMesh
-	_check(ok_keys, "all twelve keys exist, face front, stand on the fascia and wear a cap")
+	_check(ok_keys, "every key exists, faces front, stands on the fascia and wears a cap")
 	var overlap := false
 	var spots := {}
-	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW]:
+	for row: Array in [Body.NAV_ROW, Body.TRANSPORT_ROW, [["ModeButton"], ["TapeEjectButton"], ["CdEjectButton"]]]:
 		for spec: Array in row:
 			var b := hifi.get_node(str(spec[0])) as VRButton
 			for k: Vector2 in spots:
@@ -169,6 +170,107 @@ func _body(hifi: SubsonicHifi) -> void:
 	_check(is_equal_approx(hifi.phones_level, 0.4), "the LEVEL knob sets the headphones' level")
 	var sv := hifi.get_node("Screen/Viewport") as SubViewport
 	_check(sv != null and sv.get_child_count() == 1 and sv.get_child(0).get("browser") == hifi.browser, "the screen is up and bound to the browser")
+	var screen := sv.get_child(0)
+	_check(hifi.lcd_filter and screen._filter.visible, "the retro LCD filter is on by default")
+	hifi.set_lcd_filter(false)
+	_check(not screen._filter.visible and Config.load_all()["lcd_filter"] == false, "the TAB switch takes it off, and it is kept")
+	hifi.set_lcd_filter(true)
+	_check(screen._filter.visible, "and back on")
+
+
+func _led_lit(hifi: SubsonicHifi, i: int) -> bool:
+	var led := hifi.get_node("Model/Led_%s" % Body.LED_NAMES[i]) as MeshInstance3D
+	return led.material_override == Body.led_material(i, true)
+
+
+func _make_album(dir: String, names: Array) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	for n: String in names:
+		var f := FileAccess.open(dir + "/" + n, FileAccess.WRITE)
+		f.store_string("x")
+
+
+func _modes(hifi: SubsonicHifi) -> void:
+	# The LEDs: one lit, the mode on.
+	_check(hifi.mode == SubsonicHifi.Mode.INTERNET and _led_lit(hifi, 2) and not _led_lit(hifi, 0) and not _led_lit(hifi, 1), "the unit starts on NET with its LED lit and the others dark")
+	var mode_key := hifi.get_node("ModeButton") as VRButton
+	mode_key.button_pressed.emit()
+	_check(hifi.mode == SubsonicHifi.Mode.CD and _led_lit(hifi, 0) and not _led_lit(hifi, 2), "MODE steps NET to CD and moves the LED")
+	_check(hifi.source == SubsonicHifi.Source.MEDIA and hifi.has_track_skip(), "CD is a disc source, with skip")
+	mode_key.button_pressed.emit()
+	_check(hifi.mode == SubsonicHifi.Mode.TAPE and _led_lit(hifi, 1) and hifi.plays_sides() and not hifi.has_track_skip() and hifi.has_scan(), "then TAPE: a tape plays sides, scans and does not skip")
+	mode_key.button_pressed.emit()
+	_check(hifi.mode == SubsonicHifi.Mode.INTERNET, "and back to NET")
+	# What NET was left on comes back.
+	hifi.source = SubsonicHifi.Source.LIBRARY
+	hifi.queue = [{"id": "q0", "title": "Q0", "suffix": "mp3"}, {"id": "q1", "title": "Q1", "suffix": "mp3"}]
+	hifi._tracks = PackedStringArray(["a", "b"])
+	hifi.set_mode(SubsonicHifi.Mode.CD)
+	_check(hifi.source == SubsonicHifi.Source.MEDIA and hifi.queue.size() == 2, "leaving NET keeps its queue")
+	hifi.set_mode(SubsonicHifi.Mode.INTERNET)
+	_check(hifi.source == SubsonicHifi.Source.LIBRARY and hifi._tracks.size() == 2, "coming back to NET takes the queue up again")
+	hifi.source = SubsonicHifi.Source.NONE
+	hifi.queue = []
+	hifi._net_source = SubsonicHifi.Source.NONE
+	hifi._tracks = PackedStringArray()
+	# PLAY with nothing in the bay says so and plays nothing.
+	hifi.set_mode(SubsonicHifi.Mode.CD)
+	hifi.play()
+	_check(hifi.status == "NO DISC" and not hifi.is_playing, "PLAY on CD with no disc says NO DISC")
+	hifi.set_mode(SubsonicHifi.Mode.TAPE)
+	hifi.play()
+	_check(hifi.status == "NO TAPE" and not hifi.is_playing, "and on TAPE, NO TAPE")
+	hifi.set_mode(SubsonicHifi.Mode.INTERNET)
+	# A real disc and a real cassette into their bays.
+	var dir := SCRATCH + "/album"
+	_make_album(dir, ["01 First.mp3", "02 Second.mp3"])
+	var disc := (load("res://Scenes/Objects/media/audio_disc.tscn") as PackedScene).instantiate()
+	disc.set("album_path", ProjectSettings.globalize_path(dir))
+	disc.set("album_label", "Test Disc")
+	add_child(disc)
+	hifi._slot_cd.restore(disc)
+	await _frames(3)
+	_check(hifi.mode == SubsonicHifi.Mode.CD and hifi.has_media_in_bay(), "a disc put in the bay (nothing playing) takes the unit to CD")
+	_check(hifi._tracks.size() == 2 and hifi.media_label() == "Test Disc" and hifi.has_track_skip(), "its tracks are read as a CD's are")
+	_check(hifi.media_tracks() == ["01 First", "02 Second"], "and named without their extension")
+	hifi.browser.go_home()
+	var home: Array = hifi.browser.page()["rows"].map(func(r: Dictionary) -> String: return r["text"])
+	_check("Tracks" in home and "Eject" in home and "Internet (NET)" in home, "the CD home page offers Tracks, Eject and NET (%s)" % str(home))
+	hifi.is_playing = true
+	var np := hifi.now_playing()
+	_check(np["source"] == "media" and np["title"] == "01 First" and np["album"] == "Test Disc" and np["format"] == "CD" and np["next"] == "02 Second" and np["count"] == 2, "now_playing() names the track, the disc and the next track")
+	hifi.is_playing = false
+	var tape := (load("res://Scenes/Objects/media/audio_cassette.tscn") as PackedScene).instantiate()
+	tape.set("album_path", ProjectSettings.globalize_path(dir))
+	tape.set("album_label", "Test Tape")
+	add_child(tape)
+	# With the CD playing, a cassette put in waits: the mode does not change under it.
+	hifi.is_playing = true
+	hifi._slot_tape.restore(tape)
+	await _frames(3)
+	_check(hifi.mode == SubsonicHifi.Mode.CD, "a cassette put in while the CD plays does not take the unit over")
+	hifi.is_playing = false
+	hifi.set_mode(SubsonicHifi.Mode.TAPE)
+	await _frames(2)
+	_check(hifi.has_media_in_bay() and hifi.plays_sides() and hifi._tracks.size() == 2 and not hifi.has_track_skip(), "MODE to TAPE takes up the waiting cassette: side A's tracks, no skip")
+	hifi.is_playing = true
+	np = hifi.now_playing()
+	_check(np["format"] == "TAPE  SIDE A" and np["title"] == "01 First", "a tape says its side")
+	hifi.is_playing = false
+	# Taking the cassette out of its bay empties that function only.
+	hifi._on_tape_out()
+	_check(not hifi.has_media_in_bay() and hifi._tracks.is_empty(), "a cassette out leaves the tape function empty")
+	hifi.set_mode(SubsonicHifi.Mode.CD)
+	_check(hifi.has_media_in_bay(), "while the disc is still in its own bay")
+	# NET content asked for from another function switches to NET.
+	hifi.play_station({"name": "Nowhere", "url": "http://127.0.0.1:9/stream.mp3"})
+	_check(hifi.mode == SubsonicHifi.Mode.INTERNET and hifi.source == SubsonicHifi.Source.RADIO, "tuning a station from CD goes to NET")
+	hifi.stop()
+	hifi.station = {}
+	hifi.source = SubsonicHifi.Source.NONE
+	hifi._net_source = SubsonicHifi.Source.NONE
+	disc.queue_free()
+	tape.queue_free()
 
 
 func _stations(hifi: SubsonicHifi, ui: Control) -> void:

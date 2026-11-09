@@ -47,7 +47,7 @@ func _run() -> void:
 	add_child(hifi)
 	await get_tree().process_frame
 	_check(hifi is RetroAudioPlayer and hifi.is_in_group("subsonic_hifi"), "it is a RetroAudioPlayer in its own group")
-	_check(not (hifi as RetroAudioPlayer).get_node("MediaSlot").visible, "no disc slot is offered")
+	_check(hifi.get_node_or_null("CdBay") is MediaSlot and hifi.get_node_or_null("TapeBay") is MediaSlot, "it has a CD bay and a cassette bay")
 	hifi.queue_free()
 	print("[sb-reg] %d cases, %d failed" % [_cases, _failed])
 	if _cases != EXPECTED_CASES:

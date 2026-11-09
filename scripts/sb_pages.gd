@@ -22,6 +22,7 @@ const PLAYLISTS := "playlists"
 const PLAYLIST := "playlist"
 const RADIO := "radio"
 const NOW := "now"
+const TRACKS := "tracks"
 
 const ALBUM_KINDS := [["New albums", "newest"], ["Recently played", "recent"], ["Most played", "frequent"],
 	["Random albums", "random"], ["Starred", "starred"]]
@@ -186,6 +187,23 @@ static func home_rows(signed_in: bool, station_count: int, now_on: bool) -> Arra
 	else:
 		rows.append(row("Not signed in", "none", null, "open the TAB menu: Server"))
 	rows.append(row("Radio", "open", RADIO, "%d station%s" % [station_count, "" if station_count == 1 else "s"]))
+	return rows
+
+
+## The home page of the CD and TAPE functions: what is in the bay, its tracks, EJECT, and the way to NET.
+static func media_home_rows(mode_name: String, has_media: bool, label: String, track_count: int, now_on: bool) -> Array:
+	var rows: Array = []
+	if now_on:
+		rows.append(row("Now playing", "open", NOW))
+	if has_media:
+		rows.append(row(label if label != "" else ("Disc" if mode_name == "CD" else "Cassette"), "none", null,
+			"%d track%s" % [track_count, "" if track_count == 1 else "s"]))
+		if track_count > 0:
+			rows.append(row("Tracks", "open", TRACKS))
+		rows.append(row("Eject", "eject"))
+	else:
+		rows.append(row("No disc" if mode_name == "CD" else "No cassette", "none", null, "put one in the bay below"))
+	rows.append(row("Internet (NET)", "mode", 2))
 	return rows
 
 

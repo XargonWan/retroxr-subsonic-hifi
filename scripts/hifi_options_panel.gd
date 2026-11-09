@@ -82,6 +82,7 @@ func _ensure_ui_connected() -> void:
 	ui.quality_changed.connect(func(kbps: int) -> void:
 		_hifi.call("set_quality", kbps)
 		_refresh())
+	ui.lcd_filter_changed.connect(func(on: bool) -> void: _hifi.call("set_lcd_filter", on))
 	ui.ignore_gravity_toggled.connect(func(on: bool) -> void: _hifi.call("set_ignore_gravity", on))
 	_hifi.state_changed.connect(_refresh)
 	_ui_connected = true
@@ -121,7 +122,7 @@ func _refresh() -> void:
 		"stations": _hifi.call("stations"), "cache_mb": s["cache_mb"],
 		"cache_used": int((_hifi.get("cache") as RefCounted).call("total_bytes")),
 		"quality": int(s.get("quality_kbps", 0)),
-		"ignore_gravity": bool(_hifi.call("get_ignore_gravity")),
+		"ignore_gravity": bool(_hifi.call("get_ignore_gravity")), "lcd_filter": bool(_hifi.get("lcd_filter")),
 	})
 
 

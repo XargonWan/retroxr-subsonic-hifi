@@ -12,7 +12,7 @@ const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Cache = preload("res://mods/xenu.subsonic/scripts/sb_cache.gd")
 const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 
-const EXPECTED_CASES := 158
+const EXPECTED_CASES := 162
 const SCRATCH := "user://sb_pure_scratch"
 
 var _cases := 0
@@ -316,6 +316,10 @@ func _pages() -> void:
 	_eq(out.map(func(r: Dictionary) -> String: return r["text"]), ["Not signed in", "Radio"], "home when not signed in keeps the radio")
 	_eq(out[0]["act"], "none", "and the not-signed-in row does nothing")
 	_eq(Pages.home_rows(true, 1, false)[-1]["sub"], "1 station", "singular")
+	_eq(Pages.media_home_rows("CD", false, "", 0, false).map(func(r: Dictionary) -> String: return r["text"]), ["No disc", "Internet (NET)"], "media home: an empty CD bay")
+	_eq(Pages.media_home_rows("TAPE", false, "", 0, false)[0]["text"], "No cassette", "media home: an empty TAPE bay")
+	_eq(Pages.media_home_rows("TAPE", true, "Mix", 3, true).map(func(r: Dictionary) -> String: return r["text"]), ["Now playing", "Mix", "Tracks", "Eject", "Internet (NET)"], "media home: a cassette that is playing")
+	_eq(Pages.media_home_rows("CD", true, "", 0, false).map(func(r: Dictionary) -> String: return r["text"]), ["Disc", "Eject", "Internet (NET)"], "media home: a disc with no tracks has no Tracks row")
 	_eq(Pages.letter_rows().size(), 27, "A-Z and #")
 	_eq([Pages.letter_of("ABBA"), Pages.letter_of("The Beatles"), Pages.letter_of("A Perfect Circle"), Pages.letter_of("2Pac"), Pages.letter_of("A"), Pages.letter_of("  ")], ["A", "B", "P", "#", "A", "#"], "the sort letter skips an article, '#' for the rest")
 	var artists := [{"id": "1", "name": "Bjork", "albums": 1}, {"id": "2", "name": "ABBA", "albums": 3}, {"id": "3", "name": "The Beatles", "albums": 2}, {"id": "4", "name": "Bon Jovi", "albums": 0}]

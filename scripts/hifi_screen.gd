@@ -68,6 +68,7 @@ var _np_shuffle: Button = null
 var _np_repeat: Button = null
 var _np_empty: Label = null
 var _foot_nodes: Array[Control] = []
+var _filter: ColorRect = null
 
 
 func _ready() -> void:
@@ -75,11 +76,26 @@ func _ready() -> void:
 	_build()
 
 
+const RETRO_SHADER := preload("res://mods/xenu.subsonic/scripts/retro_lcd.gdshader")
+
+var _retro := true
+
+
+## The retro LCD filter: the picture pulled toward grey, its blacks lifted, a cool cast and a faint pixel grid, as a
+## small LCD of the early 2000s looks.
+func set_retro(on: bool) -> void:
+	_retro = on
+	if _filter != null:
+		_filter.visible = on
+
+
 ## Hand the screen its browser and the Hi-Fi it reads the now-playing line from.
 func bind(a_browser: RefCounted, a_hifi: Object) -> void:
 	browser = a_browser
 	_hifi = a_hifi
 	browser.changed.connect(refresh)
+	if _hifi != null:
+		set_retro(bool(_hifi.get("lcd_filter")))
 	if _hifi != null and _hifi.has_signal("state_changed"):
 		_hifi.connect("state_changed", refresh)
 	refresh()
@@ -190,6 +206,14 @@ func _build() -> void:
 	_bar.add_child(_bar_fill)
 	_foot_nodes = [_foot, _cover, _foot_title, _foot_sub, _foot_time, _bar]
 	_build_now()
+	# The retro LCD look goes over everything else, takes no press, and is the TAB menu's to switch.
+	_filter = ColorRect.new()
+	_filter.size = SIZE
+	_filter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_filter.material = ShaderMaterial.new()
+	(_filter.material as ShaderMaterial).shader = RETRO_SHADER
+	add_child(_filter)
+	set_retro(_retro)
 
 
 ## The Now playing page: the cover, what plays, a seekable bar and the transport. Hidden on every other page.
@@ -471,7 +495,13 @@ func _draw_keyboard(p: Dictionary) -> void:
 func _draw_status() -> void:
 	var s := ""
 	if _hifi != null:
-		s = str(_hifi.get("status"))
+		s = str(_hifi.call("mode_name"))
+		var st := str(_hifi.get("status"))
+		if st != "":
+			s += " · " + st
+		var osd := str(_hifi.get("osd"))
+		if osd != "":
+			s = osd
 	_status.text = s
 
 

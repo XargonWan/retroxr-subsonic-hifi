@@ -28,6 +28,7 @@ signal cache_size_changed(mb: int)
 signal cache_clear_pressed
 signal quality_changed(kbps: int)
 signal ignore_gravity_toggled(enabled: bool)
+signal lcd_filter_changed(enabled: bool)
 
 const COLOR_BG := Color(0.06, 0.08, 0.14, 0.96)
 const COLOR_ROW := Color(0.65, 0.70, 0.85)
@@ -55,6 +56,7 @@ var _cache_minus: Button = null
 var _cache_plus: Button = null
 var _quality: OptionButton = null
 var _float_check: VRToggle = null
+var _lcd_check: CheckBox = null
 var _suppress := false
 var _cache_mb := Config.CACHE_MB_DEFAULT
 var _stations_key := ""
@@ -85,6 +87,12 @@ func _build_ui() -> void:
 	_build_radio_tab(_tab("Radio"))
 	_build_cache_tab(_tab("Cache"))
 	var more := _tab("Unit")
+	_lcd_check = MenuStyle.check("Retro LCD look (washed-out screen)", 20, 44)
+	_lcd_check.toggled.connect(func(on: bool) -> void:
+		if not _suppress:
+			lcd_filter_changed.emit(on))
+	more.add_child(_lcd_check)
+	_note(more, "MODE on the unit steps CD, TAPE and NET. A disc goes in the slot at the bottom, a cassette in the bay at the top right; EJECT is beside each.")
 	_float_check = MenuStyle.float_toggle(more)
 	_float_check.toggled.connect(func(on: bool) -> void:
 		if not _suppress:
@@ -310,6 +318,7 @@ func populate(s: Dictionary) -> void:
 		if int(QUALITIES[i][1]) == kbps:
 			_quality.select(i)
 	_float_check.button_pressed = bool(s["ignore_gravity"])
+	_lcd_check.button_pressed = bool(s.get("lcd_filter", true))
 	_suppress = false
 
 

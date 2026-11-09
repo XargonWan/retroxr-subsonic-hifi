@@ -26,7 +26,12 @@ const Browser = preload("res://mods/xenu.subsonic/scripts/hifi_browser.gd")
 const ScreenScene = preload("res://mods/xenu.subsonic/scenes/hifi_screen.tscn")
 const ViewportScene = preload("res://addons/godot-xr-tools/objects/viewport_2d_in_3d.tscn")
 
-enum Source { NONE, LIBRARY, RADIO }
+enum Source { NONE, LIBRARY, RADIO, MEDIA }
+## The three functions MODE steps through. The values are the order of the keys' LEDs (Body.LED_NAMES) and are SAVED.
+enum Mode { CD, TAPE, INTERNET }
+const MODE_NAMES := ["CD", "TAPE", "NET"]
+const SnapHighlightScript = preload("res://Scripts/Objects/highlights/snap_highlight.gd")
+const SnapZoneScene = preload("res://addons/godot-xr-tools/objects/snap_zone.tscn")
 
 ## Something the screen shows changed: the queue, the status, the station's now-playing, the login.
 signal state_changed
@@ -39,6 +44,9 @@ const RADIO_RETRY_SECONDS := 2.0
 var client: Node = null
 var cache: RefCounted = null
 var source := Source.NONE
+var mode := Mode.INTERNET
+## The retro LCD look (washed out, a pixel grid): the TAB menu's switch.
+var lcd_filter := true
 var queue: Array = []
 var station: Dictionary = {}
 ## AzuraCast's now-playing for the station on air ({} for a station that publishes none).
@@ -60,6 +68,12 @@ var cover: Texture2D = null
 ## Triangles the body draws (a test holds it to a budget).
 var body_triangles := 0
 
+## A word the screen shows for a moment (the LEVEL knob's setting); "" when there is none.
+var osd := ""
+var _slot_cd: MediaSlot = null
+var _slot_tape: MediaSlot = null
+var _net_source := Source.NONE
+var _mode_ready := false
 var _screen: Node3D = null
 var _covers := {}
 var _tick: Timer = null
@@ -79,7 +93,7 @@ var _radio_wanted := false
 ## The scene is the base CD player's: its tray-era keys and its model go before the deck's own @onready lookups run
 ## (a node freed here is never found, so the base wires only what stays).
 func _enter_tree() -> void:
-	for n: String in ["OpenButton", "RewindButton", "FastForwardButton", "RepeatButton", "ShuffleButton", "Model"]:
+	for n: String in ["OpenButton", "RepeatButton", "ShuffleButton", "Model"]:
 		var c := get_node_or_null(n)
 		if c != null:
 			remove_child(c)
@@ -108,6 +122,7 @@ func _ready() -> void:
 	set_quality(int(s.get("quality_kbps", 0)), false)
 	shuffle = bool(s.get("shuffle", false))
 	repeat = clampi(int(s.get("repeat", 0)), 0, 2)
+	lcd_filter = bool(s.get("lcd_filter", true))
 	if client.has_login():
 		refresh_server_stations.call_deferred()
 	client.auth_failed.connect(func() -> void:
@@ -119,21 +134,22 @@ func _ready() -> void:
 	_radio_timer.one_shot = false
 	_radio_timer.timeout.connect(_poll_radio)
 	add_child(_radio_timer)
+	set_mode(int(s.get("mode", Mode.INTERNET)), false)
 	print("[Subsonic] %s: ready (server %s, %s, cache %d MB, vlc %s)" % [name,
 		client.base if not client.base.is_empty() else "none",
 		"signed in" if client.has_login() else "not signed in", int(s["cache_mb"]), _vlc != null])
 
 
-## No tray, no disc: take the base scene's snap zone out of play so a disc cannot be dropped on a box that has no
-## slot. (The node stays: RetroAudioPlayer reads it with an @onready.)
+## The base deck's scene gives the zone named MediaSlot (the CD bay's here, moved to its slot); the cassette bay's is
+## made here. Both are loaded through the game's own MediaSlot (a disc rides in flat, a cassette rides in upright: its
+## authored 100 x 64 x 12 mm shape is the one the bay takes), and the deck code that reads a tape's sides and place, and
+## a disc's tracks, runs on whichever is in the bay of the mode that is on.
 func _setup_loader() -> void:
-	if _media_slot != null:
-		_media_slot.enabled = false
-		_media_slot.visible = false
 	body_triangles = Body.build(self, get_node("Model"))
 	var knob := get_node("LevelKnob") as VRKnob
 	knob.value_changed.connect(set_phones_level)
 	set_phones_level(knob.value)
+	_build_bays()
 	browser = Browser.new(self)
 	for spec: Array in [["MenuButton", "menu"], ["BackButton", "back"], ["LeftButton", "left"], ["UpButton", "up"],
 			["DownButton", "down"], ["RightButton", "right"], ["OkButton", "ok"]]:
@@ -141,8 +157,62 @@ func _setup_loader() -> void:
 		(get_node(str(spec[0])) as VRButton).button_pressed.connect(func() -> void:
 			if _mains_gate(cmd.to_upper()):
 				browser.nav(cmd))
+	(get_node("ModeButton") as VRButton).button_pressed.connect(cycle_mode)
+	(get_node("TapeEjectButton") as VRButton).button_pressed.connect(func() -> void:
+		if _mains_gate("EJECT"):
+			_slot_tape.toggle_eject())
+	(get_node("CdEjectButton") as VRButton).button_pressed.connect(func() -> void:
+		if _mains_gate("EJECT"):
+			_slot_cd.toggle_eject())
 	_build_screen()
 	print("[Subsonic] %s: body of %d triangles" % [name, body_triangles])
+
+
+func _build_bays() -> void:
+	# CD: the scene's own zone, put at the slot. The disc's ghost (a flat cylinder) is already under it.
+	_media_slot.transform = Transform3D(Basis.IDENTITY, Vector3(Body.CD_AT.x, Body.CD_AT.y, Body.FRONT))
+	_media_slot.enabled = true
+	_media_slot.visible = true
+	_slot_cd = MediaSlot.new()
+	_slot_cd.name = "CdBay"
+	_slot_cd.host = self
+	_slot_cd.slot = _media_slot
+	_slot_cd.insert_depth = 0.10
+	add_child(_slot_cd)
+	_slot_cd.inserted.connect(_on_cd_in)
+	_slot_cd.removed.connect(_on_cd_out)
+	# TAPE: a zone like it, for audio_cassette, with a box for a ghost.
+	var zone := SnapZoneScene.instantiate() as XRToolsSnapZone
+	zone.name = "TapeSlot"
+	zone.grab_distance = 0.09
+	zone.snap_require = "audio_cassette"
+	zone.transform = Transform3D(Basis.IDENTITY, Vector3(Body.TAPE_AT.x, Body.TAPE_AT.y, Body.FRONT + 0.006))
+	add_child(zone)
+	var hl := Node3D.new()
+	hl.name = "SnapHighlight"
+	hl.set_script(SnapHighlightScript)
+	zone.add_child(hl)
+	var ghost := MeshInstance3D.new()
+	ghost.name = "HighlightMesh"
+	var gm := BoxMesh.new()
+	gm.size = Vector3(0.1004, 0.0638, 0.012)
+	ghost.mesh = gm
+	var gmat := StandardMaterial3D.new()
+	gmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gmat.albedo_color = Color(0.2, 0.5, 1.0, 0.4)
+	gmat.emission_enabled = true
+	gmat.emission = Color(0.0, 0.15, 0.5)
+	gmat.emission_energy_multiplier = 0.4
+	ghost.material_override = gmat
+	hl.add_child(ghost)
+	_slot_tape = MediaSlot.new()
+	_slot_tape.name = "TapeBay"
+	_slot_tape.host = self
+	_slot_tape.slot = zone
+	_slot_tape.insert_depth = 0.09
+	add_child(_slot_tape)
+	_slot_tape.inserted.connect(_on_tape_in)
+	_slot_tape.removed.connect(_on_tape_out)
 
 
 func _build_screen() -> void:
@@ -207,6 +277,195 @@ func set_quality(kbps: int, save := true) -> void:
 	if save:
 		Config.set_value("quality_kbps", transcode_kbps if transcode_kbps > 0 else null)
 		print("[Subsonic] %s: quality %s" % [name, "original" if transcode_kbps == 0 else "mp3 %d kbps" % transcode_kbps])
+
+
+## The LEVEL knob: the headphones' level (the base deck), shown on the screen and logged. A lead into LINE OUT is not
+## affected by it (as the CD player's is not): the line out is at full level and the set or the amplifier has the volume.
+func set_phones_level(v: float) -> void:
+	super.set_phones_level(v)
+	var text := "LEVEL %d%%" % roundi(phones_level * 100.0)
+	osd = text if _via_phones else text + " (PHONES)"
+	print("[Subsonic] %s: LEVEL knob %.2f%s" % [name, phones_level, "" if _via_phones else " (nothing in PHONES: no change to the line out)"])
+	state_changed.emit()
+	if is_inside_tree():
+		get_tree().create_timer(1.5).timeout.connect(func() -> void:
+			if osd == text or osd == text + " (PHONES)":
+				osd = ""
+				state_changed.emit())
+
+
+# --- the three functions ----------------------------------------------------------------------------------
+
+## MODE: CD -> TAPE -> NET -> CD ...
+func cycle_mode() -> void:
+	if not _mains_gate("MODE"):
+		return
+	set_mode((int(mode) + 1) % 3)
+
+
+func mode_name() -> String:
+	return MODE_NAMES[mode]
+
+
+## Change function. What was playing stops; the new function takes up the medium in ITS bay (a disc, a cassette) or, on
+## NET, the queue or station it was left on. The LED of the mode on lights, the others are dark.
+func set_mode(m: int, save := true) -> void:
+	m = clampi(m, 0, 2)
+	if _mode_ready and m == mode:
+		return
+	var first := not _mode_ready
+	_mode_ready = true
+	if not first:
+		_halt()
+		if mode == Mode.INTERNET:
+			_net_source = source
+		_radio_wanted = false
+		if _radio_timer != null:
+			_radio_timer.stop()
+	cover = null
+	status = ""
+	_snapped_media = null
+	_tracks = PackedStringArray()
+	_track_idx = 0
+	album_path = ""
+	_blank = -1.0
+	mode = m as Mode
+	if save:
+		Config.set_value("mode", m if m != Mode.INTERNET else null)
+	if mode == Mode.INTERNET:
+		source = _net_source
+		radio_info = {}
+		if source == Source.LIBRARY:
+			for song: Dictionary in queue:
+				if cache != null:
+					_tracks.append(cache.path(_cache_name(song)))
+	else:
+		source = Source.MEDIA
+		var slot := _slot_cd if mode == Mode.CD else _slot_tape
+		if slot != null and slot.has_media():
+			_media_loaded(slot.get_media())
+	_update_leds()
+	print("[Subsonic] %s: mode %s (%s)" % [name, MODE_NAMES[mode], "from the saved settings" if first else "pressed"])
+	if browser != null:
+		browser.go_home()
+	state_changed.emit()
+
+
+func _update_leds() -> void:
+	var model := get_node_or_null("Model")
+	if model == null:
+		return
+	for i in 3:
+		var led := model.get_node_or_null("Led_%s" % Body.LED_NAMES[i]) as MeshInstance3D
+		if led != null:
+			led.material_override = Body.led_material(i, i == int(mode))
+
+
+## A disc or a cassette went into its bay. On its own mode it is taken up at once; otherwise, with nothing playing, the unit
+## goes to that function (as a combination set does), and with something playing it waits in the bay for MODE.
+func _on_cd_in(media: Node3D) -> void:
+	_bay_in(Mode.CD, media)
+
+
+func _on_tape_in(media: Node3D) -> void:
+	_bay_in(Mode.TAPE, media)
+
+
+func _bay_in(m: int, media: Node3D) -> void:
+	_log_event("%s in the %s bay: %s" % [media.name, MODE_NAMES[m], str(media.get("album_label"))])
+	if mode == m:
+		_media_loaded(media)
+	elif not is_playing:
+		set_mode(m)
+	state_changed.emit()
+
+
+func _on_cd_out() -> void:
+	_bay_out(Mode.CD)
+
+
+func _on_tape_out() -> void:
+	_bay_out(Mode.TAPE)
+
+
+func _bay_out(m: int) -> void:
+	if mode == m and source == Source.MEDIA:
+		_media_unloaded()
+	state_changed.emit()
+
+
+## The EJECT row of the screen: the bay of the function that is on.
+func eject_current() -> void:
+	var slot := _slot_cd if mode == Mode.CD else (_slot_tape if mode == Mode.TAPE else null)
+	if slot != null:
+		slot.toggle_eject()
+
+
+## The names of what is on the disc or the tape in the bay of the mode that is on, in order.
+func media_tracks() -> Array:
+	var out: Array = []
+	for path: String in _tracks:
+		out.append(path.get_file().get_basename())
+	return out
+
+
+func has_media_in_bay() -> bool:
+	return source == Source.MEDIA and _snapped_media != null
+
+
+func media_label() -> String:
+	if _snapped_media == null:
+		return ""
+	var l := str(_snapped_media.get("album_label"))
+	return l if l != "" else str(_snapped_media.get("album_path")).get_file()
+
+
+func set_lcd_filter(on: bool) -> void:
+	lcd_filter = on
+	Config.set_value("lcd_filter", on)
+	if _screen != null:
+		var sv := _screen.get_node_or_null("Viewport") as SubViewport
+		if sv != null and sv.get_child_count() > 0:
+			sv.get_child(0).call("set_retro", on)
+	print("[Subsonic] %s: retro LCD filter %s" % [name, "on" if on else "off"])
+	state_changed.emit()
+
+
+## The base deck's hooks for the media it plays: tape sides and a tape's length, a disc's tracks, saves and the net layer.
+func plays_sides() -> bool:
+	return mode == Mode.TAPE
+
+
+func _seated_side() -> int:
+	return _slot_tape.seated_side if _slot_tape != null else 0
+
+
+func _side_length(a_s: float, b_s: float) -> float:
+	var minutes := TapeSides.tape_minutes(a_s, b_s)
+	var tape := _tape()
+	if tape != null and "tape_minutes" in tape:
+		tape.set("tape_minutes", minutes)
+	return TapeSides.side_s(minutes)
+
+
+## A bay's medium does not start by itself: PLAY does, as on a combination set.
+func _autoplay_on_load() -> bool:
+	return false
+
+
+func restore_media(media: Node3D, yaw: float = 0.0, side_out: int = 0) -> void:
+	if media.is_in_group("audio_cassette"):
+		_slot_tape.restore(media, 0.0, side_out)
+	else:
+		_slot_cd.restore(media, yaw)
+
+
+func media_seat_yaw() -> float:
+	return _slot_cd.seat_yaw() if mode == Mode.CD and _slot_cd != null else 0.0
+
+
+func remove_media() -> void:
+	eject_current()
 
 
 # --- the login -----------------------------------------------------------------------------------------
@@ -290,6 +549,8 @@ func play_songs(songs: Array, start: int = 0) -> void:
 	if songs.is_empty():
 		print("[Subsonic] %s: nothing to play" % name)
 		return
+	if mode != Mode.INTERNET:
+		set_mode(Mode.INTERNET)
 	_halt()
 	source = Source.LIBRARY
 	queue = songs.duplicate()
@@ -311,6 +572,8 @@ func play_songs(songs: Array, start: int = 0) -> void:
 func play_station(st: Dictionary) -> void:
 	if st.is_empty() or str(st.get("url", "")).is_empty():
 		return
+	if mode != Mode.INTERNET:
+		set_mode(Mode.INTERNET)
 	_halt()
 	source = Source.RADIO
 	station = st
@@ -380,6 +643,23 @@ func song_at(idx: int) -> Dictionary:
 
 ## Every path to a sound goes through here. A library track not in the cache is fetched first.
 func play() -> void:
+	if source == Source.NONE:
+		_log_event("PLAY with nothing chosen: pick something on the screen")
+		return
+	if source == Source.MEDIA:
+		if _snapped_media == null:
+			status = "NO DISC" if mode == Mode.CD else "NO TAPE"
+			_log_event("PLAY: the %s bay is empty" % MODE_NAMES[mode])
+			state_changed.emit()
+			return
+		status = ""
+		super.play()
+		state_changed.emit()
+		return
+	if source == Source.RADIO and _tracks.is_empty() and not station.is_empty():
+		# Back on NET with a station tuned before: tune it again (its stream address was not kept).
+		play_station(station)
+		return
 	if source == Source.LIBRARY and _track_idx >= 0 and _track_idx < queue.size():
 		var song: Dictionary = queue[_track_idx]
 		var cname := _cache_name(song)
@@ -572,17 +852,25 @@ func _protected() -> Array:
 # --- the base deck's questions --------------------------------------------------------------------------
 
 func has_track_skip() -> bool:
-	return source == Source.LIBRARY
+	return source == Source.LIBRARY or (source == Source.MEDIA and mode == Mode.CD)
 
 
+## A library track scans (it is a file), and so does a disc or a tape (the base deck's FF and REW); a station does not.
 func has_scan() -> bool:
-	return source == Source.LIBRARY
+	return source == Source.LIBRARY or source == Source.MEDIA
+
+
+## How many tracks the queue, the disc or the tape has.
+func _count() -> int:
+	return queue.size() if source == Source.LIBRARY else _tracks.size()
 
 
 ## What plays when the track ends: the same track (REPEAT ONE), a random one not yet played (SHUFFLE; REPEAT ALL
 ## starts a new round), the next (REPEAT ALL wraps) or nothing (-1). A station never ends: a dropped stream is retried.
 func _track_after(idx: int) -> int:
-	if source != Source.LIBRARY or queue.is_empty():
+	if source == Source.MEDIA and mode == Mode.TAPE:
+		return super._track_after(idx)             # a tape runs on through its tracks and stops at the side's end
+	if (source != Source.LIBRARY and source != Source.MEDIA) or _count() == 0:
 		return -1
 	if repeat == 2:
 		return idx
@@ -593,18 +881,19 @@ func _pick_next(idx: int, wrap: bool) -> int:
 	if shuffle:
 		_played[idx] = true
 		var left: Array = []
-		for i in queue.size():
+		var n := _count()
+		for i in n:
 			if not _played.has(i) and i != idx:
 				left.append(i)
 		if left.is_empty():
-			if not wrap or queue.size() < 2:
+			if not wrap or n < 2:
 				return -1
 			_played = {idx: true}
-			for i in queue.size():
+			for i in n:
 				if i != idx:
 					left.append(i)
 		return int(left[_rng.randi_range(0, left.size() - 1)])
-	if idx + 1 < queue.size():
+	if idx + 1 < _count():
 		return idx + 1
 	return 0 if wrap else -1
 
@@ -646,8 +935,9 @@ func seek_to(fraction: float) -> void:
 
 
 func _rebuild_tracks() -> void:
-	# The queue is the album; there is no folder to read.
-	pass
+	# On NET the queue is the album: there is no folder to read. A disc or a tape is read as the base deck reads it.
+	if source == Source.MEDIA:
+		super._rebuild_tracks()
 
 
 ## libVLC could not open or keep a stream. A station is retried like a dropped one; a library stream is NO LINK.
@@ -737,6 +1027,8 @@ func now_playing() -> Dictionary:
 			"artist": str(np.get("artist", "")), "album": str(np.get("album", "")), "position": _radio_position(np),
 			"length": float(np.get("duration", 0)), "paused": is_paused(), "index": 0, "count": 0, "format": "",
 			"next": str(np.get("next_title", "")), "shuffle": false, "repeat": 0}
+	if source == Source.MEDIA:
+		return _media_now_playing()
 	var song := song_at(_track_idx)
 	var fmt := str(song.get("suffix", "")).to_upper()
 	if int(song.get("bitrate", 0)) > 0:
@@ -746,6 +1038,21 @@ func now_playing() -> Dictionary:
 		"album": str(song.get("album", "")), "position": _vlc_time_sec(), "length": float(song.get("duration", 0)),
 		"paused": is_paused(), "index": _track_idx, "count": queue.size(), "format": fmt,
 		"next": str(song_at(after).get("title", "")) if after >= 0 else "", "shuffle": shuffle, "repeat": repeat}
+
+
+## What the screen is told while a disc or a tape plays.
+func _media_now_playing() -> Dictionary:
+	var title := ""
+	if _blank >= 0.0:
+		title = "(blank tape)"
+	elif _track_idx >= 0 and _track_idx < _tracks.size():
+		title = _tracks[_track_idx].get_file().get_basename()
+	var fmt := "CD" if mode == Mode.CD else "TAPE  SIDE %s" % TapeSides.side_name(_side)
+	var after := _pick_preview() if mode == Mode.CD else (_track_idx + 1 if _track_idx + 1 < _tracks.size() else -1)
+	return {"source": "media", "title": title, "artist": "", "album": media_label(), "position": _vlc_time_sec(),
+		"length": _vlc_length_sec(), "paused": is_paused(), "index": _track_idx, "count": _tracks.size(), "format": fmt,
+		"next": _tracks[after].get_file().get_basename() if after >= 0 and after < _tracks.size() else "",
+		"shuffle": shuffle if mode == Mode.CD else false, "repeat": repeat if mode == Mode.CD else 0}
 
 
 ## How far into the song on air: what AzuraCast said at the last poll, run on by the time since (it is asked every 10 s).
@@ -761,6 +1068,6 @@ func _pick_preview() -> int:
 		return -1
 	if repeat == 2:
 		return _track_idx
-	if _track_idx + 1 < queue.size():
+	if _track_idx + 1 < _count():
 		return _track_idx + 1
-	return 0 if repeat == 1 and queue.size() > 1 else -1
+	return 0 if repeat == 1 and _count() > 1 else -1

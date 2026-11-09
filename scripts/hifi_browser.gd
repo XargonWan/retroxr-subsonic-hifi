@@ -43,6 +43,12 @@ func signed_in() -> bool:
 ## Rebuild the home page's rows (it depends on the login, the stations and what is playing).
 func refresh_home() -> void:
 	var p: Dictionary = pages.stack[0]
+	if hifi != null and int(hifi.get("mode")) != 2:
+		var tracks: Array = hifi.call("media_tracks")
+		pages.set_rows(p, Pages.media_home_rows(str(hifi.call("mode_name")), bool(hifi.call("has_media_in_bay")),
+			str(hifi.call("media_label")), tracks.size(), now_on()))
+		changed.emit()
+		return
 	pages.set_rows(p, Pages.home_rows(signed_in(), (hifi.call("stations") as Array).size() if hifi != null else 0, now_on()))
 	changed.emit()
 
@@ -126,6 +132,14 @@ func activate(r: Dictionary) -> void:
 			_album(str(arg), str(r["text"]))
 		"playlist":
 			_playlist(str(arg), str(r["text"]))
+		"play_track":
+			hifi.call("remote_goto_track", int(arg))
+			changed.emit()
+		"eject":
+			hifi.call("eject_current")
+			changed.emit()
+		"mode":
+			hifi.call("set_mode", int(arg))
 		"play_all", "play_song":
 			_play_from_page(int(arg))
 		"play_result":
@@ -162,6 +176,14 @@ func _open(kind: String, title: String) -> void:
 				pages.set_rows(p, Pages.playlist_rows(Api.playlists(body))))
 		Pages.NOW:
 			pages.push(Pages.NOW, "Now playing")
+		Pages.TRACKS:
+			var p: Dictionary = pages.push(Pages.TRACKS, "Tracks")
+			var rows: Array = []
+			var i := 0
+			for t: String in hifi.call("media_tracks"):
+				rows.append(Pages.row("%d. %s" % [i + 1, t], "play_track", i))
+				i += 1
+			pages.set_rows(p, rows)
 	changed.emit()
 
 

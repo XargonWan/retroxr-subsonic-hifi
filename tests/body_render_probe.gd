@@ -43,7 +43,7 @@ func _run() -> void:
 	h.set("freeze", true)
 	var cam := Camera3D.new()
 	vp.add_child(cam)
-	cam.position = Vector3(0.20, 0.25, 0.62)
+	cam.position = Vector3(0.30, 0.25, 0.80)
 	cam.look_at(Vector3(0.0, 0.0, 0.0))
 	print("[probe] body triangles: %d" % h.body_triangles)
 	await _shot(vp, "hifi_three_quarter")
@@ -55,7 +55,7 @@ func _run() -> void:
 		{"track": 2, "title": "Dancing Queen", "artist": "ABBA", "duration": 231},
 		{"track": 3, "title": "My Love, My Life", "artist": "ABBA", "duration": 233}], "▶ Play album"))
 	b.changed.emit()
-	cam.position = Vector3(0.0, 0.03, 0.55)
+	cam.position = Vector3(0.0, 0.0, 0.72)
 	cam.fov = 38.0
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_front")
@@ -88,7 +88,7 @@ func _run() -> void:
 	h.repeat = 1
 	b.go_home()
 	b.activate({"text": "Now playing", "act": "open", "arg": "now"})
-	cam.position = Vector3(0.0, 0.03, 0.55)
+	cam.position = Vector3(0.0, 0.0, 0.72)
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_now_library")
 	h.source = SubsonicHifi.Source.RADIO
@@ -100,10 +100,10 @@ func _run() -> void:
 	h.is_playing = false
 	h.state_changed.emit()
 	b.go_home()
-	cam.position = Vector3(-0.36, 0.12, 0.40)
+	cam.position = Vector3(-0.45, 0.15, 0.50)
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_left")
-	cam.position = Vector3(-0.25, 0.20, -0.55)
+	cam.position = Vector3(-0.30, 0.20, -0.65)
 	cam.look_at(Vector3(0.05, -0.02, -0.1))
 	await _shot(vp, "hifi_back")
 	get_tree().quit(0)

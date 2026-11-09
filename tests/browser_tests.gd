@@ -8,7 +8,7 @@ const Browser = preload("res://mods/xenu.subsonic/scripts/hifi_browser.gd")
 const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 
-const EXPECTED_CASES := 48
+const EXPECTED_CASES := 56
 
 var _cases := 0
 var _failed := 0
@@ -43,11 +43,39 @@ class FakeHifi extends RefCounted:
 	var played: Array = []
 	var tuned: Array = []
 	var paused_toggles := 0
+	var mode := 2
+	var media := false
+	var tracks: Array = ["One", "Two"]
+	var ejected := 0
+	var goto: Array = []
+	var modes: Array = []
 	var merged: Array = [{"name": "Jazz", "url": "https://j/live", "source": "user"}]
 	var refresh_cbs: Array = []
 
 	func stations() -> Array:
 		return merged
+
+	func mode_name() -> String:
+		return ["CD", "TAPE", "NET"][mode]
+
+	func has_media_in_bay() -> bool:
+		return media
+
+	func media_label() -> String:
+		return "Disc X"
+
+	func media_tracks() -> Array:
+		return tracks
+
+	func remote_goto_track(i: int) -> void:
+		goto.append(i)
+
+	func eject_current() -> void:
+		ejected += 1
+
+	func set_mode(m: int) -> void:
+		modes.append(m)
+		mode = m
 
 	func refresh_server_stations(cb: Callable = Callable()) -> void:
 		refresh_cbs.append(cb)
@@ -111,6 +139,7 @@ func _init() -> void:
 	_library(b, h)
 	_search(b, h)
 	_radio_and_misc(b, h)
+	_media_modes(b, h)
 	_stale(h)
 	print("[sb-browser] %d cases, %d failed" % [_cases, _failed])
 	if _cases != EXPECTED_CASES:
@@ -262,6 +291,37 @@ func _radio_and_misc(b: RefCounted, h: FakeHifi) -> void:
 	b.go_home()
 	b.activate({"text": "Playlists", "act": "open", "arg": Pages.PLAYLISTS})
 	_check(str(b.page()["error"]).length() > 0 and (b.page()["rows"] as Array).is_empty(), "a failed fetch shows its error and no rows")
+
+
+func _media_modes(b: RefCounted, h: FakeHifi) -> void:
+	h.mode = 0
+	h.media = false
+	b.go_home()
+	_eq(_texts(b), ["No disc", "Internet (NET)"], "CD with an empty bay: say so, and offer NET")
+	h.media = true
+	b.go_home()
+	_eq(_texts(b), ["Disc X", "Tracks", "Eject", "Internet (NET)"], "CD with a disc: its label, Tracks, Eject, NET")
+	_eq(b.page()["rows"][0]["sub"], "2 tracks", "and how many tracks it has")
+	b.nav("down")
+	b.nav("ok")
+	_eq([b.page()["kind"], _texts(b)], [Pages.TRACKS, ["1. One", "2. Two"]], "Tracks lists the disc")
+	b.nav("down")
+	b.nav("ok")
+	_eq(h.goto, [1], "a track on the list plays that track")
+	b.go_home()
+	b.nav("down")
+	b.nav("down")
+	b.nav("ok")
+	_eq(h.ejected, 1, "Eject ejects")
+	b.go_home()
+	b.nav("down")
+	b.nav("down")
+	b.nav("down")
+	b.nav("ok")
+	_eq(h.modes, [2], "Internet (NET) switches function")
+	h.mode = 2
+	b.go_home()
+	_eq(_texts(b)[0], "Artists", "and the NET home page is back")
 
 
 func _stale(h: FakeHifi) -> void:
