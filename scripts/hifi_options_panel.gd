@@ -67,9 +67,11 @@ func _ensure_ui_connected() -> void:
 		Config.remove_station(u)
 		_refresh())
 	ui.station_played.connect(func(u: String) -> void:
-		for st: Dictionary in Config.load_all()["stations"]:
+		for st: Dictionary in _hifi.call("stations"):
 			if st["url"] == u:
 				_hifi.call("play_station", st))
+	ui.stations_refresh_pressed.connect(func() -> void:
+		_hifi.call("refresh_server_stations", func(_all: Array) -> void: _refresh()))
 	ui.cache_size_changed.connect(func(mb: int) -> void:
 		Config.set_value("cache_mb", mb)
 		_hifi.call("apply_cache_size")
@@ -116,7 +118,7 @@ func _refresh() -> void:
 	ui.populate({
 		"status": text, "ok": ok,
 		"server": str(s.get("server", "")), "user": str(s.get("user", "")), "signed_in": signed,
-		"stations": s["stations"], "cache_mb": s["cache_mb"],
+		"stations": _hifi.call("stations"), "cache_mb": s["cache_mb"],
 		"cache_used": int((_hifi.get("cache") as RefCounted).call("total_bytes")),
 		"quality": int(s.get("quality_kbps", 0)),
 		"ignore_gravity": bool(_hifi.call("get_ignore_gravity")),

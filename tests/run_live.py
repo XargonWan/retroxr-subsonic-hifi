@@ -39,7 +39,7 @@ def main() -> int:
     if host:
         # flatpak-spawn only forwards what --env= names.
         cmd = ["flatpak-spawn", "--host"] + ["--env=%s=%s" % (k, env[k]) for k in pass_through if env.get(k)]
-    cmd += [GODOT, "--headless", "--path", PROJECT, "res://mods/xenu.subsonic/tests/live_probe.tscn"]
+    cmd += [GODOT, "--headless", "--path", PROJECT, "res://mods/xenu.subsonic/tests/live_probe.tscn", "--", "--no-mods"]
     with open(log, "w") as f:
         rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, env=env, timeout=300).returncode
     text = open(log, errors="replace").read()

@@ -5,7 +5,8 @@
 ##   server_submitted(text)        the address was committed (Enter, the button, or focus left it)
 ##   sign_in_pressed(user, pass)   the password is read from its field, then the field is CLEARED
 ##   sign_out_pressed
-##   station_added(name, url) / station_removed(url) / station_played(url)
+##   station_added(name, url) / station_removed(url) / station_played(url) / stations_refresh_pressed
+##   (a station with source "server" is the server's own: it can be played, not removed here)
 ##   cache_size_changed(mb) / cache_clear_pressed / quality_changed(kbps)  (0 = the file as it is)
 ##   ignore_gravity_toggled(on)    float in place
 ##   close_requested
@@ -22,6 +23,7 @@ signal sign_out_pressed
 signal station_added(name: String, url: String)
 signal station_removed(url: String)
 signal station_played(url: String)
+signal stations_refresh_pressed
 signal cache_size_changed(mb: int)
 signal cache_clear_pressed
 signal quality_changed(kbps: int)
@@ -168,10 +170,11 @@ func _build_server_tab(root: VBoxContainer) -> void:
 # --- Radio ----------------------------------------------------------------------------------------------
 
 func _build_radio_tab(root: VBoxContainer) -> void:
-	_note(root, "Internet radio: an Icecast/Shoutcast stream, a .pls/.m3u playlist, or an AzuraCast public player page (https://host/public/station).")
+	_note(root, "Your stations, and the ones your server keeps (marked SERVER: change those on the server). A stream, a .pls/.m3u playlist or an AzuraCast public player page (https://host/public/station) will do.")
 	_stations_box = VBoxContainer.new()
 	_stations_box.add_theme_constant_override("separation", 4)
 	root.add_child(_stations_box)
+	_button(root, "Refresh from the server", func() -> void: stations_refresh_pressed.emit(), 36)
 	root.add_child(HSeparator.new())
 	_st_name = _field_row(root, "Name", "My station")
 	_st_url = _field_row(root, "Address", "https://...")
@@ -204,7 +207,8 @@ func _set_stations(list: Array) -> void:
 		row.add_theme_constant_override("separation", 6)
 		_stations_box.add_child(row)
 		var play := Button.new()
-		play.text = "▶ " + str(st["name"])
+		var from_server: bool = str(st.get("source", "user")) == "server"
+		play.text = "▶ " + str(st["name"]) + ("   · SERVER" if from_server else "")
 		play.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		play.clip_text = true
 		play.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -213,6 +217,8 @@ func _set_stations(list: Array) -> void:
 		var url: String = st["url"]
 		play.pressed.connect(func() -> void: station_played.emit(url))
 		row.add_child(play)
+		if from_server:
+			continue
 		var del := Button.new()
 		del.text = "×"
 		del.custom_minimum_size = Vector2(48, 40)

@@ -47,6 +47,23 @@ static func clean_stations(rows: Variant) -> Array:
 	return out
 
 
+## The stations the player sees: their own first, then the server's that they do not already have (the same url is
+## one station, and the player's name for it wins). Each row is {name, url, source} with source "user" or "server";
+## `server` rows come from the API (sb_api.radio_stations), `user` rows from the settings.
+static func merge(server: Variant, user: Variant) -> Array:
+	var out: Array = []
+	var seen := {}
+	for st: Dictionary in clean_stations(user):
+		seen[st["url"]] = true
+		out.append({"name": st["name"], "url": st["url"], "source": "user"})
+	for st: Dictionary in clean_stations(server):
+		if seen.has(st["url"]):
+			continue
+		seen[st["url"]] = true
+		out.append({"name": st["name"], "url": st["url"], "source": "server"})
+	return out
+
+
 # --- playlists ---------------------------------------------------------------------------------------
 
 ## Whether the address is a playlist to be read rather than a stream to be opened.

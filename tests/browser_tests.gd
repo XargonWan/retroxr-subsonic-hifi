@@ -8,7 +8,7 @@ const Browser = preload("res://mods/xenu.subsonic/scripts/hifi_browser.gd")
 const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 
-const EXPECTED_CASES := 43
+const EXPECTED_CASES := 48
 
 var _cases := 0
 var _failed := 0
@@ -43,6 +43,19 @@ class FakeHifi extends RefCounted:
 	var played: Array = []
 	var tuned: Array = []
 	var paused_toggles := 0
+	var merged: Array = [{"name": "Jazz", "url": "https://j/live", "source": "user"}]
+	var refresh_cbs: Array = []
+
+	func stations() -> Array:
+		return merged
+
+	func refresh_server_stations(cb: Callable = Callable()) -> void:
+		refresh_cbs.append(cb)
+
+	func finish_refresh() -> void:
+		for cb: Callable in refresh_cbs:
+			cb.call(merged)
+		refresh_cbs.clear()
 
 	func is_signed_in() -> bool:
 		return signed
@@ -79,7 +92,6 @@ func _init() -> void:
 	OS.set_environment("XENU_SB_SETTINGS", "user://sb_browser_scratch/settings.json")
 	DirAccess.make_dir_recursive_absolute("user://sb_browser_scratch")
 	DirAccess.remove_absolute("user://sb_browser_scratch/settings.json")
-	Config.add_station("Jazz", "https://j/live")
 	var h := FakeHifi.new()
 	h.client.canned = {
 		"getArtists": {"artists": {"index": [{"name": "A", "artist": [{"id": "ar1", "name": "ABBA", "albumCount": 2}, {"id": "ar2", "name": "Aha", "albumCount": 1}]}, {"name": "B", "artist": [{"id": "ar3", "name": "Bjork"}]}]}},
@@ -207,14 +219,33 @@ func _search(b: RefCounted, h: FakeHifi) -> void:
 func _radio_and_misc(b: RefCounted, h: FakeHifi) -> void:
 	b.go_home()
 	b.activate({"text": "Radio", "act": "open", "arg": Pages.RADIO})
-	_eq(_texts(b), ["Jazz"], "the stations of the settings")
+	_eq(_texts(b), ["Jazz"], "the stations on offer")
+	h.merged = [{"name": "Jazz", "url": "https://j/live", "source": "user"}, {"name": "Plaza", "url": "http://p/hls", "source": "server"}]
+	h.finish_refresh()
+	_eq(_texts(b), ["Jazz", "Plaza"], "the server's own list is asked again and the page follows it")
+	_eq([b.page()["rows"][0]["sub"], b.page()["rows"][1]["sub"]], ["yours", "server"], "each row says whose it is")
+	b.nav("down")
 	b.nav("ok")
-	_eq(h.tuned, ["https://j/live"], "OK tunes the station")
+	_eq(h.tuned, ["http://p/hls"], "a server station tunes like any other")
+	b.nav("up")
+	b.nav("ok")
+	_eq(h.tuned, ["http://p/hls", "https://j/live"], "OK tunes the station (after the server one)")
 	h.source = 2
 	h.station = {"name": "Jazz", "url": "https://j/live"}
 	b.go_home()
 	b.activate({"text": "Radio", "act": "open", "arg": Pages.RADIO})
-	_eq(_texts(b), ["● Jazz"], "the station on air is marked")
+	h.finish_refresh()
+	_eq(_texts(b), ["● Jazz", "Plaza"], "the radio page again, the one on air marked")
+	h.station = {"name": "Jazz", "url": "https://j/live"}
+	h.source = 2
+	b.go_home()
+	b.activate({"text": "Radio", "act": "open", "arg": Pages.RADIO})
+	_eq(_texts(b)[0], "● Jazz", "the station on air is marked")
+	var left: Dictionary = b.page()
+	b.nav("back")
+	h.merged = [{"name": "Late", "url": "u", "source": "server"}]
+	h.finish_refresh()
+	_check((left["rows"] as Array).size() == 2, "a radio page the player has left is not rewritten by the late answer")
 	b.go_home()
 	b.activate({"text": "Now playing", "act": "open", "arg": Pages.NOW})
 	b.nav("ok")

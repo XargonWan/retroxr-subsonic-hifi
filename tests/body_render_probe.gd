@@ -72,6 +72,34 @@ func _run() -> void:
 	h.status = "LOADING"
 	h.state_changed.emit()
 	await _shot(vp, "hifi_radio")
+	# Now playing: a library track with a cover, then a station.
+	var img := Image.create(192, 192, false, Image.FORMAT_RGB8)
+	for y in 192:
+		for x in 192:
+			var d := Vector2(x - 96, y - 96).length()
+			img.set_pixel(x, y, Color(0.9, 0.55, 0.15).lerp(Color(0.15, 0.1, 0.3), clampf(d / 140.0, 0.0, 1.0)) if d > 40 else Color(0.97, 0.95, 0.9))
+	h.cover = ImageTexture.create_from_image(img)
+	h.source = SubsonicHifi.Source.LIBRARY
+	h.queue = [{"id": "a", "title": "Questo È Halloween (di \"Tim Burton's Nightmare Before Christmas\"/Colonna Sonora Originale)", "artist": "The Citizens of Halloween", "album": "Tim Burton's The Nightmare Before Christmas", "duration": 196, "suffix": "flac", "bitrate": 905, "track": 1},
+		{"id": "b", "title": "Jack's Lament", "artist": "Danny Elfman", "album": "", "duration": 200, "suffix": "mp3", "bitrate": 320, "track": 2}]
+	h._track_idx = 0
+	h.is_playing = true
+	h.shuffle = true
+	h.repeat = 1
+	b.go_home()
+	b.activate({"text": "Now playing", "act": "open", "arg": "now"})
+	cam.position = Vector3(0.0, 0.03, 0.55)
+	cam.look_at(Vector3(0.0, 0.0, 0.15))
+	await _shot(vp, "hifi_now_library")
+	h.source = SubsonicHifi.Source.RADIO
+	h.station = {"name": "RADIODROME", "url": "x"}
+	h.radio_info = {"title": "Red World Coming Close", "artist": "Rekku", "album": "", "elapsed": 95, "duration": 200, "next_title": "Rekku - Another One"}
+	h._radio_info_msec = Time.get_ticks_msec()
+	h.state_changed.emit()
+	await _shot(vp, "hifi_now_radio")
+	h.is_playing = false
+	h.state_changed.emit()
+	b.go_home()
 	cam.position = Vector3(-0.36, 0.12, 0.40)
 	cam.look_at(Vector3(0.0, 0.0, 0.15))
 	await _shot(vp, "hifi_left")

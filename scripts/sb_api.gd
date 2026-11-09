@@ -115,6 +115,11 @@ static func stream(id: String, format: String = "", max_bitrate: int = 0) -> Arr
 	return ["stream", pairs]
 
 
+## The stations the server keeps (Navidrome: Settings > Radios).
+static func get_radio_stations() -> Array:
+	return ["getInternetRadioStations", []]
+
+
 static func cover_art(id: String, size: int = 256) -> Array:
 	return ["getCoverArt", [["id", id], ["size", size]]]
 
@@ -231,6 +236,19 @@ static func playlist_songs(body: Dictionary) -> Dictionary:
 	for s: Variant in _arr(root.get("entry")):
 		rows.append(song_row(s))
 	return {"name": str(root.get("name", "")), "songs": rows}
+
+
+## getInternetRadioStations -> [{name, url, home}]; a row with no http(s) stream address is left out.
+static func radio_stations(body: Dictionary) -> Array:
+	var root: Dictionary = body.get("internetRadioStations", {}) if body.get("internetRadioStations") is Dictionary else {}
+	var rows: Array = []
+	for s: Variant in _arr(root.get("internetRadioStation")):
+		var d: Dictionary = s
+		var url := str(d.get("streamUrl", "")).strip_edges()
+		if not (url.begins_with("http://") or url.begins_with("https://")):
+			continue
+		rows.append({"name": str(d.get("name", "")), "url": url, "home": str(d.get("homePageUrl", ""))})
+	return rows
 
 
 # --- small helpers -------------------------------------------------------------------------------------

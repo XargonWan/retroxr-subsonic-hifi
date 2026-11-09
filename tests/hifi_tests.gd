@@ -4,7 +4,7 @@ extends Node
 
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const HifiPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
-const EXPECTED_CASES := 38
+const EXPECTED_CASES := 60
 const SCRATCH := "user://sb_hifi_scratch"
 
 var _cases := 0
@@ -94,10 +94,11 @@ func _run() -> void:
 	var songs := [{"id": "s1", "title": "One", "artist": "A", "album": "B", "duration": 100, "suffix": "mp3", "track": 1, "disc": 1}]
 	hifi.client.configure("http://127.0.0.1:9", "u", "t", "s")
 	hifi.play_songs(songs, 0)
-	_check(hifi.status == "LOADING" and not hifi.is_playing, "a track not in the cache shows LOADING and does not play yet")
+	# With libVLC the track starts streaming at once; without it (CI) it is fetched first. Either way the end is the same.
+	_check((hifi.status == "LOADING" and not hifi.is_playing) or hifi.is_playing, "a track not in the cache is on its way (%s)" % hifi.status)
 	_check(hifi.has_track_skip() and hifi.has_scan(), "a library queue has skip and scan")
-	await get_tree().create_timer(2.0).timeout
-	_check(hifi.status == "NO LINK" and not hifi.is_playing, "a download that cannot be made ends in NO LINK (%s)" % hifi.status)
+	await get_tree().create_timer(4.0).timeout
+	_check(hifi.status == "NO LINK" and not hifi.is_playing, "a server that cannot be reached ends in NO LINK (status %s, playing %s)" % [hifi.status, hifi.is_playing])
 	hifi.stop()
 	_check(hifi.status == "NO LINK" or hifi.status == "", "STOP after that does not crash")
 	# A station
@@ -109,6 +110,8 @@ func _run() -> void:
 	_check(not Config.has_login(Config.load_all()), "sign out forgets the key")
 	# The body
 	_body(hifi)
+	await _stations(hifi, ui)
+	await _now_playing(hifi)
 	# The panel hides
 	HifiPanel.toggle_for(hifi, cam)
 	_check(not panel.visible, "TAB again closes the menu")
@@ -166,6 +169,104 @@ func _body(hifi: SubsonicHifi) -> void:
 	_check(is_equal_approx(hifi.phones_level, 0.4), "the LEVEL knob sets the headphones' level")
 	var sv := hifi.get_node("Screen/Viewport") as SubViewport
 	_check(sv != null and sv.get_child_count() == 1 and sv.get_child(0).get("browser") == hifi.browser, "the screen is up and bound to the browser")
+
+
+func _stations(hifi: SubsonicHifi, ui: Control) -> void:
+	Config.set_value("stations", [])
+	Config.add_station("Mine", "https://mine.example/live")
+	Config.set_value("server_stations", [{"name": "Theirs", "url": "https://theirs.example/live"}, {"name": "Mine on the server", "url": "https://mine.example/live"}])
+	_check(hifi.stations().map(func(s: Dictionary) -> String: return s["name"]) == ["Mine", "Theirs"], "the stations are the player's own then the server's, a shared url once")
+	hifi.state_changed.emit()
+	await _frames(2)
+	var rows: Array = ui._stations_box.get_children()
+	_check(rows.size() == 2 and rows[0].get_child_count() == 2 and rows[1].get_child_count() == 1, "the menu lists both; only the player's own has a remove button")
+	_check(rows[1].get_child(0).text.contains("SERVER"), "and the server's is marked")
+	ui.station_removed.emit("https://theirs.example/live")
+	await _frames(2)
+	_check(hifi.stations().size() == 2, "removing a server station from the menu changes nothing (it is the server's)")
+	hifi.client.configure("http://127.0.0.1:9", "u", "t", "s")
+	var box := {"list": null}
+	hifi.refresh_server_stations(func(all: Array) -> void: box["list"] = all)
+	await get_tree().create_timer(2.0).timeout
+	_check(box["list"] != null and (box["list"] as Array).size() == 2, "a refresh that cannot reach the server keeps what was kept")
+
+
+func _now_playing(hifi: SubsonicHifi) -> void:
+	var songs: Array = []
+	for i in 4:
+		songs.append({"id": "n%d" % i, "title": "Song %d" % i, "artist": "Artist", "album": "Album", "duration": 100 + i, "suffix": "flac", "bitrate": 900, "track": i + 1, "disc": 1, "cover": ""})
+	hifi.source = SubsonicHifi.Source.LIBRARY
+	hifi.queue = songs
+	hifi._track_idx = 1
+	# What plays next, by each setting.
+	hifi.shuffle = false
+	hifi.repeat = 0
+	_check(hifi._track_after(1) == 2 and hifi._track_after(3) == -1, "the queue plays on and stops at its end")
+	hifi.repeat = 1
+	_check(hifi._track_after(3) == 0, "REPEAT ALL wraps")
+	hifi.repeat = 2
+	_check(hifi._track_after(2) == 2, "REPEAT ONE plays the same track")
+	hifi.repeat = 0
+	hifi.shuffle = true
+	hifi._played = {}
+	var seen := {}
+	var idx := 0
+	var ended := false
+	for n in 10:
+		var nxt := hifi._track_after(idx)
+		if nxt < 0:
+			ended = true
+			break
+		seen[nxt] = true
+		idx = nxt
+	_check(ended and seen.size() == 3 and not seen.has(0), "SHUFFLE plays every other track once, then stops (%s)" % str(seen.keys()))
+	hifi.repeat = 1
+	hifi._played = {}
+	var more := true
+	for n in 12:
+		more = more and hifi._track_after(idx) >= 0
+	_check(more, "SHUFFLE with REPEAT ALL never runs out")
+	hifi.shuffle = false
+	hifi.repeat = 0
+	# What the screen is told.
+	hifi.is_playing = true
+	var np := hifi.now_playing()
+	_check(np["title"] == "Song 1" and np["index"] == 1 and np["count"] == 4 and np["format"] == "FLAC 900 kbps" and np["next"] == "Song 2" and not np["paused"], "now_playing() carries the track, its place, format and the next one")
+	hifi.set_shuffle(true)
+	hifi.cycle_repeat()
+	np = hifi.now_playing()
+	_check(np["shuffle"] and np["repeat"] == 1 and np["next"] == "", "and the shuffle and repeat state, with no next when shuffled")
+	_check(Config.load_all()["shuffle"] == true and int(Config.load_all()["repeat"]) == 1, "which are kept in the settings")
+	hifi.set_shuffle(false)
+	hifi.cycle_repeat()
+	hifi.cycle_repeat()
+	_check(hifi.repeat == 0 and not Config.load_all().has("repeat"), "REPEAT cycles back to off")
+	# The page.
+	var ui := hifi.get_node("Screen/Viewport").get_child(0)
+	hifi.browser.go_home()
+	hifi.browser.activate({"text": "Now playing", "act": "open", "arg": "now"})
+	await _frames(2)
+	_check(ui._np_box.visible and ui._np_title.text == "Song 1" and ui._np_artist.text == "Artist", "the Now playing page shows the title and artist")
+	_check(ui._np_info.text.begins_with("track 2 of 4") and ui._np_info.text.contains("FLAC"), "and where it is in the queue and what it is")
+	_check(ui._np_next.text == "next: Song 2", "and what comes next")
+	_check(ui._np_play.text == TransportGlyphs.glyph("pause"), "the play key shows PAUSE while it plays")
+	hifi._paused = true
+	hifi.state_changed.emit()
+	await _frames(2)
+	_check(ui._np_play.text == TransportGlyphs.glyph("play"), "and PLAY once paused")
+	hifi._paused = false
+	hifi.source = SubsonicHifi.Source.RADIO
+	hifi.station = {"name": "Radio X", "url": "https://x/live"}
+	hifi.radio_info = {"title": "On Air", "artist": "DJ", "album": "", "elapsed": 10, "duration": 200, "next_title": "Later"}
+	hifi.state_changed.emit()
+	await _frames(2)
+	_check(ui._np_title.text == "On Air" and ui._np_album.text.contains("Radio X") and ui._np_prev.disabled and ui._np_shuffle.disabled, "a station shows what is on air, with skip and shuffle off")
+	_check(ui._np_total.text == "3:20" and ui._np_next.text == "next: Later", "and AzuraCast's length and next song")
+	hifi.is_playing = false
+	hifi.state_changed.emit()
+	await _frames(2)
+	_check(ui._np_empty.visible and not ui._np_title.visible, "with nothing on the page says so")
+	hifi.browser.go_home()
 
 
 func _finish() -> void:

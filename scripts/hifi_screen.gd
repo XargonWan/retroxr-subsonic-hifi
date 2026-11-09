@@ -47,6 +47,27 @@ var _bar_fill: ColorRect = null
 var _cover: TextureRect = null
 var _now: Dictionary = {}
 var _hifi: Object = null
+# The Now playing page.
+var _np_box: Control = null
+var _np_cover: TextureRect = null
+var _np_blank: Label = null
+var _np_title: Label = null
+var _np_artist: Label = null
+var _np_album: Label = null
+var _np_info: Label = null
+var _np_next: Label = null
+var _np_bar: ColorRect = null
+var _np_fill: ColorRect = null
+var _np_elapsed: Label = null
+var _np_total: Label = null
+var _np_prev: Button = null
+var _np_play: Button = null
+var _np_stop: Button = null
+var _np_nextb: Button = null
+var _np_shuffle: Button = null
+var _np_repeat: Button = null
+var _np_empty: Label = null
+var _foot_nodes: Array[Control] = []
 
 
 func _ready() -> void:
@@ -167,6 +188,107 @@ func _build() -> void:
 	_bar_fill.size = Vector2(0, 6)
 	_bar_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bar.add_child(_bar_fill)
+	_foot_nodes = [_foot, _cover, _foot_title, _foot_sub, _foot_time, _bar]
+	_build_now()
+
+
+## The Now playing page: the cover, what plays, a seekable bar and the transport. Hidden on every other page.
+func _build_now() -> void:
+	_np_box = Control.new()
+	_np_box.visible = false
+	_np_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_np_box)
+	var frame := ColorRect.new()
+	frame.color = C_ROW
+	frame.position = Vector2(8, 44)
+	frame.size = Vector2(176, 176)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_np_box.add_child(frame)
+	_np_blank = _label(Rect2(8, 44, 176, 176), 64, C_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	_np_blank.text = "♪"
+	_np_cover = TextureRect.new()
+	_np_cover.position = Vector2(8, 44)
+	_np_cover.size = Vector2(176, 176)
+	_np_cover.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_np_cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_np_cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_np_box.add_child(_np_cover)
+	_np_title = _label(Rect2(196, 40, 436, 62), 21, C_TEXT)
+	_np_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_np_title.clip_text = false
+	_np_title.max_lines_visible = 2
+	_np_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_np_title.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_np_artist = _label(Rect2(196, 104, 436, 24), 19, C_CURSOR_TEXT)
+	_np_album = _label(Rect2(196, 127, 436, 20), 16, C_DIM)
+	_np_info = _label(Rect2(196, 147, 436, 18), 15, C_DIM)
+	_np_next = _label(Rect2(196, 165, 436, 18), 15, C_DIM)
+	for l: Label in [_np_title, _np_artist, _np_album, _np_info, _np_next]:
+		remove_child(l)
+		_np_box.add_child(l)
+	remove_child(_np_blank)
+	_np_box.add_child(_np_blank)
+	# The bar, and a taller invisible button over it to seek by (a laser is not a fingertip).
+	_np_bar = ColorRect.new()
+	_np_bar.color = Color(0.09, 0.2, 0.26)
+	_np_bar.position = Vector2(196, 190)
+	_np_bar.size = Vector2(432, 8)
+	_np_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_np_box.add_child(_np_bar)
+	_np_fill = ColorRect.new()
+	_np_fill.color = C_CURSOR_TEXT
+	_np_fill.size = Vector2(0, 8)
+	_np_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_np_bar.add_child(_np_fill)
+	var hit := Control.new()
+	hit.position = Vector2(196, 180)
+	hit.size = Vector2(432, 28)
+	hit.mouse_filter = Control.MOUSE_FILTER_STOP
+	hit.gui_input.connect(_on_bar_input.bind(hit))
+	_np_box.add_child(hit)
+	_np_elapsed = _label(Rect2(196, 206, 120, 18), 15, C_TEXT)
+	_np_total = _label(Rect2(508, 206, 120, 18), 15, C_TEXT, HORIZONTAL_ALIGNMENT_RIGHT)
+	for l: Label in [_np_elapsed, _np_total]:
+		remove_child(l)
+		_np_box.add_child(l)
+	_np_prev = _transport_button(Rect2(196, 226, 54, 32), "prev", func() -> void: _hifi_call("remote_prev"))
+	_np_play = _transport_button(Rect2(256, 226, 54, 32), "play", func() -> void: _hifi_call("toggle_pause"))
+	_np_stop = _transport_button(Rect2(316, 226, 54, 32), "stop", func() -> void: _hifi_call("remote_stop"))
+	_np_nextb = _transport_button(Rect2(376, 226, 54, 32), "next", func() -> void: _hifi_call("remote_next"))
+	_np_shuffle = _btn("SHUF", Rect2(446, 226, 84, 32), 15)
+	_np_shuffle.pressed.connect(func() -> void:
+		if _hifi != null:
+			_hifi.call("set_shuffle", not bool(_hifi.get("shuffle"))))
+	_np_repeat = _btn("REP", Rect2(536, 226, 92, 32), 15)
+	_np_repeat.pressed.connect(func() -> void: _hifi_call("cycle_repeat"))
+	for b: Button in [_np_shuffle, _np_repeat]:
+		remove_child(b)
+		_np_box.add_child(b)
+	_np_empty = _label(Rect2(14, 100, 612, 80), 22, C_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	_np_empty.text = "NOTHING IS PLAYING\nPick something from the menu"
+	remove_child(_np_empty)
+	_np_box.add_child(_np_empty)
+
+
+func _transport_button(rect: Rect2, glyph: String, cb: Callable) -> Button:
+	var b := _btn(TransportGlyphs.glyph(glyph), rect, 20)
+	b.add_theme_font_override("font", TransportGlyphs.font())
+	b.pressed.connect(cb)
+	remove_child(b)
+	_np_box.add_child(b)
+	return b
+
+
+func _hifi_call(method: String) -> void:
+	if _hifi != null:
+		_hifi.call(method)
+
+
+func _on_bar_input(event: InputEvent, hit: Control) -> void:
+	if _hifi == null or str(_now.get("source", "")) != "library":
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_hifi.call("seek_to", clampf(event.position.x / hit.size.x, 0.0, 1.0))
 
 
 func _build_keyboard() -> void:
@@ -218,18 +340,75 @@ func refresh() -> void:
 	_back.disabled = browser.pages.depth() <= 1
 	var kind: String = p["kind"]
 	var keyboard := kind == Pages.SEARCH
+	var now_page := kind == Pages.NOW
 	_kb_box.visible = keyboard
+	_np_box.visible = now_page
+	for n in _foot_nodes:
+		n.visible = not now_page
 	for i in _rows.size():
-		_rows[i].visible = not keyboard
-		_row_sub[i].visible = not keyboard
-	_up.visible = not keyboard
-	_down.visible = not keyboard
+		_rows[i].visible = not keyboard and not now_page
+		_row_sub[i].visible = not keyboard and not now_page
+	_up.visible = not keyboard and not now_page
+	_down.visible = not keyboard and not now_page
+	_now = _hifi.call("now_playing") if _hifi != null else {}
 	if keyboard:
 		_draw_keyboard(p)
+	elif now_page:
+		_hint.visible = false
+		_draw_now()
 	else:
 		_draw_rows(p)
 	_draw_status()
-	_draw_foot()
+	if not now_page:
+		_draw_foot()
+
+
+func _draw_now() -> void:
+	var on := not _now.is_empty()
+	_np_empty.visible = not on
+	for n: Control in [_np_cover, _np_blank, _np_title, _np_artist, _np_album, _np_info, _np_next, _np_bar,
+			_np_elapsed, _np_total, _np_prev, _np_play, _np_stop, _np_nextb, _np_shuffle, _np_repeat]:
+		n.visible = on
+	if not on:
+		return
+	var radio := str(_now.get("source", "")) == "radio"
+	var title := str(_now.get("title", ""))
+	_np_title.text = title if title != "" else str(_now.get("station", ""))
+	_np_artist.text = str(_now.get("artist", ""))
+	_np_album.text = ("RADIO · %s" % str(_now.get("station", ""))) if radio else str(_now.get("album", ""))
+	var info := ""
+	if not radio:
+		info = "track %d of %d" % [int(_now.get("index", 0)) + 1, int(_now.get("count", 1))]
+		if str(_now.get("format", "")) != "":
+			info += "  ·  " + str(_now["format"])
+	_np_info.text = info
+	_np_next.text = ("next: " + str(_now["next"])) if str(_now.get("next", "")) != "" else ""
+	var tex: Variant = _hifi.get("cover") if _hifi != null else null
+	_np_cover.texture = tex as Texture2D
+	_np_cover.visible = tex != null
+	_np_blank.visible = tex == null
+	var length := float(_now.get("length", 0))
+	var pos := float(_now.get("position", 0))
+	if radio and length <= 0.0:
+		_np_elapsed.text = "LIVE"
+		_np_total.text = ""
+		_np_fill.size.x = 0
+	else:
+		_np_elapsed.text = Api.format_time(int(pos))
+		_np_total.text = Api.format_time(int(length))
+		_np_fill.size.x = _np_bar.size.x * clampf(pos / length if length > 0.0 else 0.0, 0.0, 1.0)
+	var paused := bool(_now.get("paused", false))
+	_np_play.text = TransportGlyphs.glyph("play" if paused else "pause")
+	_np_prev.disabled = radio
+	_np_nextb.disabled = radio
+	_np_shuffle.disabled = radio
+	_np_repeat.disabled = radio
+	var shuf := bool(_now.get("shuffle", false))
+	_np_shuffle.text = "SHUF ON" if shuf else "SHUF"
+	_np_shuffle.add_theme_color_override("font_color", C_CURSOR_TEXT if shuf else C_TEXT)
+	var rep := int(_now.get("repeat", 0))
+	_np_repeat.text = ["REPEAT", "REP ALL", "REP ONE"][rep]
+	_np_repeat.add_theme_color_override("font_color", C_CURSOR_TEXT if rep > 0 else C_TEXT)
 
 
 func _draw_rows(p: Dictionary) -> void:
@@ -264,8 +443,6 @@ func _draw_rows(p: Dictionary) -> void:
 		note = str(p["error"])
 	elif (p["rows"] as Array).is_empty() and str(p["kind"]) != Pages.NOW:
 		note = "NOTHING HERE"
-	if str(p["kind"]) == Pages.NOW:
-		note = _now_text()
 	_hint.text = note
 	_hint.visible = note != ""
 	_hint.add_theme_color_override("font_color", C_WARN if str(p["error"]) != "" else C_DIM)
@@ -299,9 +476,6 @@ func _draw_status() -> void:
 
 
 func _draw_foot() -> void:
-	_now = {}
-	if _hifi != null:
-		_now = _hifi.call("now_playing")
 	if _now.is_empty():
 		_foot_title.text = "—"
 		_foot_sub.text = "stopped"

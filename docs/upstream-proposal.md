@@ -35,6 +35,10 @@ zone, and frees the tray-era buttons in `_enter_tree()` (before the `@onready` l
 - Netplay: `_net_push_state` assumes a seated disc or tape. The mod does not wire it (a peer has an empty queue and the
   base ignores the host's track change); a "this deck is not replicated" flag would say so honestly.
 
+Measured while building the streaming start: `VlcPlayer.Open` passes a `scheme://` address straight through (its code says
+so), and it has an `error` signal the base deck never listens to, so a deck whose stream cannot be opened never says so. The
+mod connects it itself (`_on_vlc_error`). Worth connecting in the base deck as well.
+
 ## 3. Per-mod settings and a place for secrets
 
 `api.store()` gives a folder. The Jellyfin mod (`jf_config.gd`) and this one (`sb_config.gd`) are the same file: a JSON

@@ -43,7 +43,7 @@ func signed_in() -> bool:
 ## Rebuild the home page's rows (it depends on the login, the stations and what is playing).
 func refresh_home() -> void:
 	var p: Dictionary = pages.stack[0]
-	pages.set_rows(p, Pages.home_rows(signed_in(), (Config.load_all()["stations"] as Array).size(), now_on()))
+	pages.set_rows(p, Pages.home_rows(signed_in(), (hifi.call("stations") as Array).size() if hifi != null else 0, now_on()))
 	changed.emit()
 
 
@@ -131,7 +131,7 @@ func activate(r: Dictionary) -> void:
 		"play_result":
 			_play_result(int(arg))
 		"play_station":
-			for st: Dictionary in Config.load_all()["stations"]:
+			for st: Dictionary in hifi.call("stations"):
 				if st["url"] == str(arg):
 					hifi.call("play_station", st)
 					print("[Subsonic] screen: tuning %s" % st["name"])
@@ -150,10 +150,12 @@ func _open(kind: String, title: String) -> void:
 			pages.current()["kb"] = [0, 0]
 		Pages.RADIO:
 			var p: Dictionary = pages.push(Pages.RADIO, "Radio")
-			var on_air := ""
-			if hifi != null and int(hifi.get("source")) == 2 and not (hifi.get("station") as Dictionary).is_empty():
-				on_air = str((hifi.get("station") as Dictionary).get("url", ""))
-			pages.set_rows(p, Pages.station_rows(Config.load_all()["stations"], on_air))
+			_fill_radio(p)
+			# What is kept shows at once; the server's own list is asked again and the page follows it.
+			hifi.call("refresh_server_stations", func(_all: Array) -> void:
+				if pages.has_page(p):
+					_fill_radio(p)
+					changed.emit())
 		Pages.PLAYLISTS:
 			var p: Dictionary = pages.push(Pages.PLAYLISTS, title, null, true)
 			_call(Api.get_playlists(), p, func(body: Dictionary) -> void:
@@ -161,6 +163,13 @@ func _open(kind: String, title: String) -> void:
 		Pages.NOW:
 			pages.push(Pages.NOW, "Now playing")
 	changed.emit()
+
+
+func _fill_radio(p: Dictionary) -> void:
+	var on_air := ""
+	if hifi != null and int(hifi.get("source")) == 2 and not (hifi.get("station") as Dictionary).is_empty():
+		on_air = str((hifi.get("station") as Dictionary).get("url", ""))
+	pages.set_rows(p, Pages.station_rows(hifi.call("stations") if hifi != null else [], on_air))
 
 
 func _albums(kind: String, title: String) -> void:

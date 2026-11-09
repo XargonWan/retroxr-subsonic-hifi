@@ -32,10 +32,11 @@ def run(path: str, extra: list) -> int:
     host = os.environ.get("HOST", "1") == "1"
     target = ["--script", MOD + path] if path.endswith(".gd") else [MOD + path]
     cmd = (["flatpak-spawn", "--host"] if host else []) + [GODOT, "--headless", "--path", PROJECT] + target
-    if extra:
-        cmd += ["--"] + extra
+    # The suites run on the working tree: mounting the player's installed packs (this mod's own zip among them) would
+    # put the packed copy of these scripts over the ones under test.
+    cmd += ["--"] + extra + ["--no-mods"]
     with open(log, "w") as f:
-        rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=150).returncode
+        rc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=100).returncode
     text = open(log, errors="replace").read()
     for line in text.splitlines():
         if re.search(r"\[sb-[a-z]+\]", line):

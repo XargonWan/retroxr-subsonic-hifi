@@ -29,6 +29,7 @@ func _run() -> void:
 	var script := load(manifest.entry) as GDScript
 	_check(script != null, "the entry script loads")
 	var api := ModApi.new(manifest, ModHooks.new(get_tree()))
+	# Run with --no-mods, so nothing has registered it yet; a loader that already did would make this a duplicate.
 	(script.new() as RetroMod).register(api)
 	_check(not api.failed(), "registering raised no problem: %s" % api.errors_text())
 	_check(ScenePersistence.is_mod_object(TYPE), "%s is a registered object" % TYPE)

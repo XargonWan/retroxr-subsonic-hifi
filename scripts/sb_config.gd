@@ -39,6 +39,7 @@ static func load_all() -> Dictionary:
 		s["server"] = url
 	s["cache_mb"] = clamp_cache_mb(s.get("cache_mb", CACHE_MB_DEFAULT))
 	s["stations"] = Radio.clean_stations(s.get("stations", []))
+	s["server_stations"] = Radio.clean_stations(s.get("server_stations", []))
 	return s
 
 
@@ -88,6 +89,7 @@ static func forget_login() -> void:
 	var s := load_all()
 	s.erase("token")
 	s.erase("salt")
+	s.erase("server_stations")
 	save_all(s)
 
 

@@ -122,6 +122,12 @@ func fetch_bytes(call: Array, cb: Callable) -> void:
 		_call(cb, ok, bytes, code))
 
 
+## A plain GET of any address, returning the bytes (a station's cover art): no Subsonic credentials are sent.
+func get_bytes(url: String, cb: Callable) -> void:
+	_request(url, "", TIMEOUT_SECONDS, func(ok: bool, bytes: Variant, code: int) -> void:
+		_call(cb, ok, bytes, code))
+
+
 ## Download a call's file into `dest` (a cache part path). Streams to disk (a track is megabytes).
 func download(call: Array, dest: String, cb: Callable) -> void:
 	if not has_login():

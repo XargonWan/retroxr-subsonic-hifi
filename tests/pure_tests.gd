@@ -12,7 +12,7 @@ const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Cache = preload("res://mods/xenu.subsonic/scripts/sb_cache.gd")
 const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 
-const EXPECTED_CASES := 144
+const EXPECTED_CASES := 158
 const SCRATCH := "user://sb_pure_scratch"
 
 var _cases := 0
@@ -114,6 +114,17 @@ func _parsing() -> void:
 	_eq(pls[0], {"id": "p1", "name": "Mix", "songs": 4, "duration": 800}, "a playlist row")
 	_eq(Api.playlist_songs({"playlist": {"name": "Mix", "entry": [{"id": "s1", "title": "One"}]}})["songs"][0]["title"], "One", "a playlist's songs")
 
+	_eq(Api.get_radio_stations()[0], "getInternetRadioStations", "the radio stations call")
+	var rs := Api.radio_stations({"internetRadioStations": {"internetRadioStation": [
+		{"id": "1", "name": "Lofi", "streamUrl": "https://r.example/listen/x/radio.mp3", "homePageUrl": "https://lofi.example/"},
+		{"id": "2", "name": "HLS", "streamUrl": "http://r.example/live.m3u8"},
+		{"id": "3", "name": "Broken", "streamUrl": "rtsp://x"},
+		{"id": "4", "name": "Empty", "streamUrl": ""}]}})
+	_eq(rs.map(func(r: Dictionary) -> String: return r["name"]), ["Lofi", "HLS"], "server stations: only http(s) streams are kept")
+	_eq(rs[0], {"name": "Lofi", "url": "https://r.example/listen/x/radio.mp3", "home": "https://lofi.example/"}, "a server station row")
+	_eq(Api.radio_stations({"internetRadioStations": {}}).size(), 0, "a server with no stations lists none")
+	_eq(Api.radio_stations({}).size(), 0, "and no key at all is none")
+	_eq(Api.radio_stations({"internetRadioStations": {"internetRadioStation": {"name": "One", "streamUrl": "http://a/b"}}}).size(), 1, "a single station given as an object")
 	_eq(Api.cache_name({"id": "s1", "suffix": "FLAC"}), "s1.flac", "cache name: id + lower-case suffix")
 	_eq(Api.cache_name({"id": "../../etc/passwd", "suffix": "mp3"}), "______etc_passwd.mp3", "cache name: nothing from the server can be a path")
 	_eq(Api.cache_name({"id": "s1", "suffix": "flac"}, "mp3"), "s1.mp3", "cache name: a transcode names its own format")
@@ -151,6 +162,13 @@ func _radio() -> void:
 	_eq([np["station"], np["artist"], np["title"], np["elapsed"], np["duration"], np["next_title"]], ["RADIODROME", "The Chemical Brothers", "Push the Button", 237, 671, "Next - Song"], "azuracast now-playing")
 	_eq(np["listen_url"], "https://r/listen/x/radio.mp3", "and its stream url")
 	_eq(Radio.parse_azuracast({"foo": 1}), {}, "not azuracast json is empty")
+	var merged := Radio.merge([{"name": "B from server", "url": "https://b/2"}, {"name": "C", "url": "https://c/3"}, {"name": "bad", "url": "nope"}],
+		[{"name": "A", "url": "https://a/1"}, {"name": "B", "url": "https://b/2"}])
+	_eq(merged.map(func(s: Dictionary) -> String: return s["name"]), ["A", "B", "C"], "merge: the player's first, the server's after, the player's name wins")
+	_eq(merged.map(func(s: Dictionary) -> String: return s["source"]), ["user", "user", "server"], "merge: each row says where it came from")
+	_eq(Radio.merge([], []), [], "merge: nothing and nothing")
+	_eq(Radio.merge([{"name": "S", "url": "https://s/1"}], "junk").size(), 1, "merge: a bad user list does not hide the server's")
+	_eq(Radio.merge([{"name": "S", "url": "https://s/1"}, {"name": "S again", "url": "https://s/1"}], []).size(), 1, "merge: the server repeating a url is one station")
 	_eq(Radio.split_stream_title("Daft Punk - One More Time"), {"artist": "Daft Punk", "title": "One More Time"}, "ICY title split")
 	_eq(Radio.split_stream_title("Just a title"), {"artist": "", "title": "Just a title"}, "ICY title with no artist")
 
@@ -190,6 +208,10 @@ func _config() -> void:
 	Config.add_station("bad", "nope")
 	_eq(Config.load_all()["stations"].size(), 2, "an invalid station is refused")
 	_eq(Config.remove_station("https://j/live").size(), 1, "a station is removed by url")
+	Config.set_value("server_stations", [{"name": "S", "url": "https://s/1"}, {"name": "junk", "url": "x"}])
+	_eq(Config.load_all()["server_stations"].size(), 1, "the server's stations are kept cleaned")
+	Config.forget_login()
+	_eq(Config.load_all()["server_stations"].size(), 0, "signing out forgets the server's stations")
 	Config.set_value("cache_mb", 100)
 	_eq(Config.cache_bytes(), 100 * 1024 * 1024, "the cache size is saved")
 
@@ -308,6 +330,8 @@ func _pages() -> void:
 	var st := Pages.station_rows([{"name": "A", "url": "u1"}, {"name": "B", "url": "u2"}], "u2")
 	_eq([st[0]["text"], st[1]["text"]], ["A", "● B"], "the station on air is marked")
 	_eq(Pages.station_rows([])[0]["act"], "none", "no stations: a hint")
+	var tagged := Pages.station_rows([{"name": "Mine", "url": "u1", "source": "user"}, {"name": "Theirs", "url": "u2", "source": "server"}])
+	_eq([tagged[0]["sub"], tagged[1]["sub"]], ["yours", "server"], "station rows say whose they are")
 	var res := Pages.result_rows({"artists": [{"id": "x", "name": "Aha"}], "albums": [{"id": "y", "name": "Hunting High", "artist": "Aha"}], "songs": [{"title": "Take On Me", "artist": "Aha", "album": "HH"}]})
 	_eq(res.map(func(r: Dictionary) -> String: return r["act"]), ["artist", "album", "play_result"], "search results: artists, albums, songs")
 	_eq(Pages.result_rows({"artists": [], "albums": [], "songs": []})[0]["text"], "Nothing found", "no results")

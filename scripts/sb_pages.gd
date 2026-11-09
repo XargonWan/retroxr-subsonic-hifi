@@ -257,7 +257,8 @@ static func playlist_rows(lists: Array) -> Array:
 static func station_rows(stations: Array, on_air: String = "") -> Array:
 	var rows: Array = []
 	for st: Dictionary in stations:
-		rows.append(row(("● " if st["url"] == on_air else "") + str(st["name"]), "play_station", st["url"]))
+		var sub := "" if not st.has("source") else ("server" if st["source"] == "server" else "yours")
+		rows.append(row(("● " if st["url"] == on_air else "") + str(st["name"]), "play_station", st["url"], sub))
 	if rows.is_empty():
 		rows.append(row("No stations yet", "none", null, "add them in the TAB menu: Radio"))
 	return rows

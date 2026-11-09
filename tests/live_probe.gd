@@ -151,15 +151,22 @@ func _object(url: String, user: String, pw: String, radio: String) -> void:
 		var albums := Api.album_list(r[1])
 		r = await _await_call(func(cb: Callable) -> void: hifi.client.call_api(Api.get_album(albums[0]["id"]), cb))
 		var songs: Array = Api.album_songs(r[1])["songs"]
+		var t_start := Time.get_ticks_msec()
 		hifi.play_songs(songs, 0)
 		var t := 0.0
-		while not hifi.is_playing and t < 90.0:
+		while hifi._vlc_time_sec() < 0.5 and t < 90.0:
 			await get_tree().process_frame
 			t += get_process_delta_time()
-		_ok(hifi.is_playing, "the deck plays the first track once it is cached (status '%s', %.1f s)" % [hifi.status, t])
+		var first_sound := (Time.get_ticks_msec() - t_start) / 1000.0
+		_ok(hifi.is_playing and hifi._vlc_time_sec() >= 0.5, "the deck is playing the first track (status '%s'); first sound after %.1f s" % [hifi.status, first_sound])
+		_ok(first_sound < 6.0, "the track starts by streaming, not after the whole file (%.1f s)" % first_sound)
 		await get_tree().create_timer(4.0).timeout
 		var pos := hifi._vlc_time_sec()
 		_ok(pos > 2.0, "and the position advances (%.1f s)" % pos)
+		hifi.seek_to(0.5)
+		await get_tree().create_timer(2.0).timeout
+		var length := float(songs[0]["duration"])
+		_ok(absf(hifi._vlc_time_sec() - length * 0.5) < length * 0.2, "a seek on the stream lands near the middle (%.0f of %.0f s)" % [hifi._vlc_time_sec(), length])
 		_ok(hifi.now_playing().get("title", "") == songs[0]["title"], "now_playing() names the track")
 		hifi.stop()
 		_ok(not hifi.is_playing, "STOP stops it")
