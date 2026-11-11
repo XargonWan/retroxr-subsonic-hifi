@@ -11,7 +11,13 @@ Plan: `~/.claude/plans/pasted-content-id-bd2d-subsonic-staged-flurry.md`.
 ## Rules
 
 - Commits in English, RetroXR's conventional style (`feat(scope): ...`), NO Co-Authored-By trailer.
-- Pack every round: `python3 tools/pack.py` -> `~/retroxr/mods/xenu.subsonic.zip`; name the zip to the user. Never mod.io.
+- Pack every round: `python3 tools/pack.py` -> `~/retroxr/mods/xenu.subsonic.zip`; name the zip to the user.
+- Releases and mod.io: a push to `main` runs `.github/workflows/release.yml`, which computes the version from the
+  commits (`feat` minor, `fix`/`perf` patch, breaking the major), creates the GitHub release and adds the same zip to
+  mod.io via `tools/publish_modio.py`. Never upload to mod.io by hand, and never change the mod's visibility there.
+  Repo: `XargonWan/retroxr-subsonic-hifi`; mod.io slug from the repo variable `MODIO_MOD_SLUG`.
+- Pushes to `main` only when the user asks for them. A commit that must not release anything gets `[skip ci]`
+  (or `chore`/`docs`/`ci`).
 - The test server password is never written to a file in this repo (use env vars / `.env.local`, gitignored).
   Store only salt + token; never log a URL with `t=`, `s=` or `p=` in it.
 - The supplied NAVI model zips have no licence: proportion reference only, never packed.
