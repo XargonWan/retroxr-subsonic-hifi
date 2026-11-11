@@ -20,8 +20,9 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-INCLUDE_TOP = ["mod.json", "mod_main.gd", "mod_main.gd.uid", "thumbnail.png", "README.txt",
+INCLUDE_TOP = ["mod.json", "mod_main.gd", "mod_main.gd.uid", "README.txt",
                "scenes", "scripts", "assets"]
+THUMBNAIL_SOURCE = os.path.join("res", "thumbnail.png")  # the repository keeps it in res/; the pack puts it at the root
 # RetroXR refuses a pack carrying a program or a game: keep this list honest about what we ship.
 FORBIDDEN_EXT = {".md", ".so", ".dll", ".exe", ".iso", ".bin", ".zip", ".nes", ".sfc", ".chd"}
 
@@ -58,6 +59,8 @@ def main():
                 sys.exit("refusing to pack %s: RetroXR would refuse the pack" % rel)
             z.write(os.path.join(ROOT, rel), "mods/%s/%s" % (mod_id, rel.replace(os.sep, "/")))
             n += 1
+        z.write(os.path.join(ROOT, THUMBNAIL_SOURCE), "mods/%s/thumbnail.png" % mod_id)
+        n += 1
     print("wrote %s: %d files, %.1f KB, version %s" % (out, n, os.path.getsize(out) / 1024, manifest["version"]))
 
     if os.path.exists(args.godot) and os.path.isdir(args.project):
