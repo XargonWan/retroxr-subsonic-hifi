@@ -62,7 +62,34 @@ the viewport's page appears a frame after the node does, with no signal, so the 
 A small "screen on an object" helper (instantiate, size, throttle, `ready` signal, optional fingertip press) would
 serve any mod device. `VfdDisplay` is draw-only, so it was not an option.
 
-## 6. Smaller things met on the way
+## 6. The cassette door, the spindles and the Electronics tab, as parts a mod can name
+
+Checked for the Hi-Fi's cassette bay: RetroXR already has the pieces, as global classes, and the mod reuses them rather
+than copying them: `DeckDrawer` (the door that tips out carrying the cassette, wired to a `MediaSlot` and a zone),
+`ApplianceModel` (the cassette deck's `cassette_mobile*.glb` loaded by path, its Door / DoorGlass / TapeSeat / ReelL /
+ReelR kept and the rest hidden), `TapeSides`, `VfdDisplay`. What `docs/modding.md` documents of this is only
+`register_object`; none of the classes above is named there, so a mod leans on internals that may move.
+
+What is still a copy: turning the spindles with the cassette's hubs (`CassettePlayer._turn_spindles`, a dozen lines
+that need the player's `_side` and `_snapped_media`), and the VFD counter/meter painter, which lives inside
+`CassettePlayer`. A `CassetteWell` node (model door + drawer + spindles, given a host and a slot) would remove both.
+The Electronics tab is read by the mod from `SpawnCatalog.SPAWN_TABS` as data, so an older build falls back to Objects;
+a `ModApi.has_feature("spawn_tabs")` would say it plainly.
+
+## 6b. Six voices for a deck (the 5.1 line out)
+
+The Hi-Fi's back has the six analog 5.1 sockets (`AudioLOut`, `AudioROut`, `AudioCOut`, `AudioLfeOut`, `AudioSlOut`,
+`AudioSrOut`, `RcaPort` OUT with the `AUDIO_*` channels, one `AvLegend`), and `AvSource.resolve` already puts a cabinet
+cabled to any of them in `feed.audio_dest`. What a deck cannot do is play on them: `SpatialAudioEmitter` has two voices
+and `RetroAudioPlayer._route_sound` takes a left and a right, so a cabinet on C / SUB / SL / SR stays silent. The decoder
+exists and is reachable from GDScript (`Engine.get_singleton("SurroundAudio").create_decoder(block, rate)`, one per
+source, per `docs/dev/surround.md`) but only `SystemAudio` (the libretro path) turns it into six voices.
+
+Proposed: an optional six-voice mode on `SpatialAudioEmitter`, fed from the deck's PCM through a `SurroundDecoder`, placed
+with `SpeakerRig.route(feed.audio_dest, rest)`, with the fallback backend answering false as `SetSurroundEnabled` does
+(degrade to stereo, never to silence). Then a deck with the six sockets plays Pro Logic II on them with no code of its own.
+
+## 7. Smaller things met on the way
 
 - A mod's tests need the game's class cache fresh: `--editor --quit` regenerates it and **dirties tracked `.import`
   files** (the TV, AV switch and cassette GLBs are Git LFS pointers in a plain checkout). Every suite prints
