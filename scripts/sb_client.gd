@@ -192,7 +192,8 @@ func _request(url: String, dest: String, timeout: float, cb: Callable) -> void:
 		_set_reachable(true)
 		if code < 200 or code >= 300:
 			print("[Subsonic] %s: HTTP %d" % [Api.redact(url), code])
-			if code == 401 or code == 403:
+			# Only this server's refusal is about the login (a station's picture on another host is not).
+			if (code == 401 or code == 403) and not base.is_empty() and url.begins_with(base):
 				auth_failed.emit()
 			_call(cb, false, "HTTP %d" % code, code)
 			return

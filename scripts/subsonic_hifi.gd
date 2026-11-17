@@ -770,25 +770,49 @@ func set_server(address: String) -> void:
 
 
 ## Sign in; the (salt, token) the server accepts is kept, the password is not. `done(ok, message)` is optional.
+## One attempt at a time, and never with an empty password (a second press of the button comes with its field already
+## cleared): such a press would be refused by the server and mark a login that worked as failed.
 func sign_in(user: String, password: String, done: Callable = Callable()) -> void:
+	if _signing_in:
+		print("[Subsonic] %s: a sign-in is already on its way: this press is ignored" % name)
+		return
+	if password.is_empty():
+		print("[Subsonic] %s: sign-in without a password: %s" % [name, "ignored, already signed in" if is_signed_in() else "nothing to send"])
+		if not is_signed_in():
+			sign_in_error = "type the password"
+			status = "SIGN IN FAILED"
+			state_changed.emit()
+		if done.is_valid():
+			done.call(is_signed_in(), "" if is_signed_in() else "type the password")
+		return
+	_signing_in = true
+	var was_signed_in := is_signed_in()
 	status = "SIGNING IN"
+	sign_in_error = ""
 	state_changed.emit()
-	var on_ok := func(u: String, salt: String, token: String) -> void:
+	var h := {}
+	h["ok"] = func(u: String, a_salt: String, a_token: String) -> void:
+		_signing_in = false
+		client.sign_in_failed.disconnect(h["fail"])
 		Config.set_value("user", u)
-		Config.set_value("salt", salt)
-		Config.set_value("token", token)
+		Config.set_value("salt", a_salt)
+		Config.set_value("token", a_token)
 		status = ""
 		state_changed.emit()
 		refresh_server_stations()
 		if done.is_valid():
 			done.call(true, "")
-	var on_fail := func(msg: String) -> void:
-		status = "SIGN IN FAILED"
+	h["fail"] = func(msg: String) -> void:
+		_signing_in = false
+		client.signed_in.disconnect(h["ok"])
+		sign_in_error = msg
+		# A login that worked before still works: the refusal is of this attempt only.
+		status = "" if was_signed_in else "SIGN IN FAILED"
 		state_changed.emit()
 		if done.is_valid():
 			done.call(false, msg)
-	client.signed_in.connect(on_ok, CONNECT_ONE_SHOT)
-	client.sign_in_failed.connect(on_fail, CONNECT_ONE_SHOT)
+	client.signed_in.connect(h["ok"], CONNECT_ONE_SHOT)
+	client.sign_in_failed.connect(h["fail"], CONNECT_ONE_SHOT)
 	client.sign_in(user, password)
 
 

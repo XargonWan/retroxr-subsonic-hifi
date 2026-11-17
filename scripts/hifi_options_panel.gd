@@ -114,7 +114,8 @@ func _refresh() -> void:
 	elif not str(s.get("server", "")).is_empty():
 		text = "Server set: sign in"
 	if not status.is_empty():
-		text = status.capitalize() + (" — " + text if not signed else "")
+		var why := str(_hifi.get("sign_in_error"))
+		text = status.capitalize() + (" — " + why if not why.is_empty() else "") + (" — " + text if not signed else "")
 		ok = false
 	ui.populate({
 		"status": text, "ok": ok,
