@@ -23,6 +23,8 @@ SUITES = [
     ("tests/browser_tests.gd", []),
     ("tests/register_tests.tscn", []),
     ("tests/hifi_tests.tscn", []),
+    ("tests/persist_tests.tscn", []),
+    ("tests/login_tests.tscn", []),
 ]
 
 
@@ -53,9 +55,25 @@ def run(path: str, extra: list) -> int:
     return rc or (1 if bad else 0)
 
 
+def start_mock() -> subprocess.Popen:
+    """tests/mock_subsonic.py on the host (the game runs there), for login_tests; it ends by itself after 3 minutes."""
+    host = os.environ.get("HOST", "1") == "1"
+    cmd = (["flatpak-spawn", "--host"] if host else []) + ["timeout", "180", "python3", os.path.join(HERE, "mock_subsonic.py"), "4599"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import time
+    time.sleep(1.0)
+    return proc
+
+
 def main() -> int:
     only = sys.argv[1:]          # e.g. `run_all.py browser` runs the suites whose path contains it
-    results = [(p, run(p, e)) for p, e in SUITES if not only or any(o in p for o in only)]
+    chosen = [(p, e) for p, e in SUITES if not only or any(o in p for o in only)]
+    mock = start_mock() if any("login" in p for p, _ in chosen) else None
+    try:
+        results = [(p, run(p, e)) for p, e in chosen]
+    finally:
+        if mock is not None:
+            mock.terminate()
     print()
     for name, rc in results:
         print("%-32s %s" % (name, "ok" if rc == 0 else "FAILED (%d)" % rc))
