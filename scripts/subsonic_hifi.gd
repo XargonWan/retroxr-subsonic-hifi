@@ -157,10 +157,127 @@ func _ready() -> void:
 	_radio_timer.one_shot = false
 	_radio_timer.timeout.connect(_poll_radio)
 	add_child(_radio_timer)
+	_load_memory(s)
 	set_mode(int(s.get("mode", Mode.INTERNET)), false)
+	_apply_memory()
+	_memory_timer = Timer.new()
+	_memory_timer.wait_time = 1.0
+	_memory_timer.timeout.connect(_memory_tick)
+	add_child(_memory_timer)
+	_memory_timer.start()
 	print("[Subsonic] %s: ready (server %s, %s, cache %d MB, vlc %s)" % [name,
 		client.base if not client.base.is_empty() else "none",
 		"signed in" if client.has_login() else "not signed in", int(s["cache_mb"]), _vlc != null])
+
+
+# --- what was playing ------------------------------------------------------------------------------------
+#
+# A disc or a cassette is remembered by the game (the medium is saved in the room, a tape with its place on it). The
+# queue and the station are this unit's own, so it writes them down itself, in its settings: the queue with the track on
+# and how far into it, the station, and whether it was playing. On the next start the function it was on takes them up
+# and, once there is power, carries on from there.
+
+## Read what was kept for the function the unit starts on (before set_mode builds the track list from the queue).
+func _load_memory(s: Dictionary) -> void:
+	_resume = {}
+	var last: Variant = s.get("last", null)
+	if not (last is Dictionary):
+		return
+	var m := int(s.get("mode", Mode.INTERNET))
+	if m == Mode.INTERNET and (last as Dictionary).get("net") is Dictionary:
+		var net: Dictionary = (last as Dictionary)["net"]
+		var q := Config.clean_queue(net.get("queue", []))
+		if q.is_empty():
+			return
+		queue = q
+		station = {}
+		_net_source = Source.LIBRARY
+		_resume = {"mode": m, "track": clampi(int(net.get("track", 0)), 0, q.size() - 1),
+			"pos": maxf(0.0, float(net.get("pos", 0.0))), "playing": bool(net.get("playing", false))}
+	elif m == Mode.RADIO and (last as Dictionary).get("fm") is Dictionary:
+		var fm: Dictionary = (last as Dictionary)["fm"]
+		var st := Radio.make_station(str((fm.get("station", {}) as Dictionary).get("name", "")) if fm.get("station") is Dictionary else "",
+			str((fm.get("station", {}) as Dictionary).get("url", "")) if fm.get("station") is Dictionary else "")
+		if st.is_empty():
+			return
+		station = st
+		_fm_source = Source.RADIO
+		_resume = {"mode": m, "pos": 0.0, "playing": bool(fm.get("playing", false))}
+	if not _resume.is_empty():
+		print("[Subsonic] %s: remembers %s (%s)" % [name, "a queue of %d" % queue.size() if m == Mode.INTERNET else "a station",
+			"was playing" if bool(_resume["playing"]) else "was stopped"])
+
+
+## After set_mode has taken the function up: the track it was on.
+func _apply_memory() -> void:
+	if not _resume.is_empty() and mode == Mode.INTERNET and source == Source.LIBRARY:
+		_track_idx = int(_resume.get("track", 0))
+
+
+## Once there is power: carry on from where it was. What was stopped stays loaded, and PLAY takes up the place.
+func _resume_if_due() -> void:
+	if _resume.is_empty() or not _mode_ready or not mains_live():
+		return
+	var r := _resume
+	_resume = {}
+	if int(r["mode"]) != int(mode) or is_playing:
+		return
+	if mode == Mode.INTERNET and source == Source.LIBRARY:
+		_resume_at = float(r["pos"]) if float(r["pos"]) > 3.0 else 0.0
+		if bool(r["playing"]) and client.has_login():
+			print("[Subsonic] %s: carrying on with track %d of %d at %d s" % [name, _track_idx + 1, queue.size(), int(r["pos"])])
+			play()
+		else:
+			print("[Subsonic] %s: track %d of %d is loaded, PLAY takes it up at %d s" % [name, _track_idx + 1, queue.size(), int(r["pos"])])
+	elif mode == Mode.RADIO and source == Source.RADIO and not station.is_empty() and bool(r["playing"]):
+		print("[Subsonic] %s: carrying on with %s" % [name, station.get("name", "?")])
+		play_station(station)
+
+
+func _memory_tick() -> void:
+	_resume_if_due()
+	# Right after a load: media that came back loose are put in their bays (a few seconds, the room spawns in turns).
+	if _adopt_ticks > 0:
+		_adopt_ticks -= 1
+		_adopt_loose_media()
+	# A cassette that was meant to play when it was loaded and found no power plays once there is.
+	if _tape_autoplay_pending:
+		if is_playing or mode != Mode.TAPE or not has_media_in_bay():
+			_tape_autoplay_pending = false
+		elif mains_live():
+			_tape_autoplay_pending = false
+			_log_event("power is on: the cassette plays")
+			play()
+	if not _mode_ready or not _resume.is_empty():
+		return
+	var playing := is_playing and not _paused
+	var sig := "%d|%d|%d|%s|%d|%d" % [mode, source, _track_idx, str(station.get("url", "")), int(playing), queue.size()]
+	if sig != _memory_sig or (playing and Time.get_ticks_msec() - _memory_msec >= MEMORY_SECONDS * 1000):
+		_save_memory(sig)
+
+
+## Write down what is on now, for the function the unit is on (CD and TAPE are the game's own to remember).
+func _save_memory(sig := "") -> void:
+	_memory_sig = sig
+	_memory_msec = Time.get_ticks_msec()
+	var s := Config.load_all()
+	var last: Dictionary = s.get("last", {}) if s.get("last") is Dictionary else {}
+	var playing := is_playing and not _paused
+	if mode == Mode.INTERNET and source == Source.LIBRARY and not queue.is_empty():
+		var w := Config.window_queue(queue, _track_idx)
+		var prev: Dictionary = last.get("net", {}) if last.get("net") is Dictionary else {}
+		var pos := _vlc_time_sec() if is_playing else (float(prev.get("pos", 0.0)) if int(prev.get("track", -1)) == int(w["track"]) else 0.0)
+		last["net"] = {"queue": w["queue"], "track": w["track"], "pos": snappedf(pos, 0.1), "playing": playing}
+	elif mode == Mode.RADIO and source == Source.RADIO and not station.is_empty():
+		last["fm"] = {"station": {"name": str(station.get("name", "")), "url": str(station.get("url", ""))}, "playing": playing}
+	else:
+		return
+	Config.set_value("last", last)
+
+
+func _exit_tree() -> void:
+	if _mode_ready and _resume.is_empty():
+		_save_memory(_memory_sig)
 
 
 ## The base deck's scene gives the zone named MediaSlot (the CD bay's here, moved to its slot); the cassette bay's is

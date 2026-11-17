@@ -186,6 +186,17 @@ func _config() -> void:
 	_eq(Config.clamp_cache_mb(1), Config.CACHE_MB_MIN, "the cache is at least the minimum")
 	_eq(Config.clamp_cache_mb(99999), Config.CACHE_MB_MAX, "and at most the maximum")
 	_eq(Config.clamp_cache_mb("junk"), 50, "junk falls back to the default")
+	# What was playing is kept between launches: a queue cleaned on the way back in, and a window of a long one.
+	var kept := Config.clean_queue([{"id": "a", "title": "T", "duration": "200", "junk": 1}, {"title": "no id"}, "x", {"id": "b"}])
+	_eq([kept.size(), kept[0]["id"], kept[0]["duration"], kept[0].has("junk"), kept[1]["title"]], [2, "a", 200, false, "?"], "a saved queue keeps rows with an id, typed, nothing else")
+	_eq(Config.clean_queue("nope"), [], "and a saved queue that is not a list is empty")
+	var long_q: Array = []
+	for i in 500:
+		long_q.append({"id": str(i)})
+	var win := Config.window_queue(long_q, 250)
+	_eq([(win["queue"] as Array).size(), (win["queue"] as Array)[win["track"]]["id"]], [Config.LAST_QUEUE_MAX, "250"], "a long queue is kept as a window round the track on")
+	_eq(Config.window_queue(long_q, 499)["queue"][Config.window_queue(long_q, 499)["track"]]["id"], "499", "at its end too")
+	_eq(Config.window_queue(long_q.slice(0, 10), 4), {"queue": long_q.slice(0, 10), "track": 4}, "a short one whole")
 	_eq(Config.step_cache_mb(50, 1), 100, "stepper up from 50")
 	_eq(Config.step_cache_mb(50, -1), 25, "stepper down from 50")
 	_eq(Config.step_cache_mb(10, -1), 10, "stepper stops at the bottom")

@@ -115,6 +115,7 @@ func _run() -> void:
 	await _modes(hifi)
 	await _stations(hifi, ui)
 	await _now_playing(hifi)
+	await _memory(hifi)
 	# The panel hides
 	HifiPanel.toggle_for(hifi, cam)
 	_check(not panel.visible, "TAB again closes the menu")
@@ -378,6 +379,51 @@ func _modes(hifi: SubsonicHifi) -> void:
 	hifi._net_source = SubsonicHifi.Source.NONE
 	disc.queue_free()
 	tape.queue_free()
+
+
+## What was playing is written down, and a unit that starts afterwards takes it up: the queue and the track on, the station.
+func _memory(hifi: SubsonicHifi) -> void:
+	var was := {"mode": hifi.mode, "queue": hifi.queue, "station": hifi.station, "source": hifi.source, "net": hifi._net_source,
+		"fm": hifi._fm_source, "idx": hifi._track_idx, "tracks": hifi._tracks}
+	hifi.set_mode(SubsonicHifi.Mode.INTERNET)
+	hifi.queue = [{"id": "q0", "title": "Q0", "suffix": "mp3"}, {"id": "q1", "title": "Q1", "suffix": "mp3"}, {"id": "q2", "title": "Q2", "suffix": "mp3"}]
+	hifi.source = SubsonicHifi.Source.LIBRARY
+	hifi._track_idx = 1
+	hifi._memory_tick()
+	var net: Dictionary = Config.load_all().get("last", {}).get("net", {})
+	_check((net.get("queue", []) as Array).size() == 3 and int(net.get("track", -1)) == 1 and net.get("playing") == false, "a queue on NET is written down with the track on")
+	hifi.set_mode(SubsonicHifi.Mode.RADIO)
+	hifi.station = {"name": "Nightwave", "url": "https://nightwave.example/live"}
+	hifi.source = SubsonicHifi.Source.RADIO
+	hifi._memory_tick()
+	var fm: Dictionary = Config.load_all().get("last", {}).get("fm", {})
+	_check(str((fm.get("station", {}) as Dictionary).get("url", "")) == "https://nightwave.example/live", "a station on FM is written down")
+	_check((Config.load_all()["last"]["net"]["queue"] as Array).size() == 3, "and the queue is kept while the unit is on FM")
+	# A unit that starts on NET takes the queue up at the track it was on, and waits for PLAY (it was not playing).
+	Config.set_value("mode", null)
+	var again := (load("res://mods/xenu.subsonic/scenes/subsonic_hifi.tscn") as PackedScene).instantiate() as SubsonicHifi
+	add_child(again)
+	await _frames(2)
+	_check(again.mode == SubsonicHifi.Mode.INTERNET and again.source == SubsonicHifi.Source.LIBRARY and again.queue.size() == 3 and again._track_idx == 1, "a unit that starts takes the queue up at the track it was on")
+	_check(again._tracks.size() == 3, "with its track list built")
+	again.queue_free()
+	# And on FM, the station it was tuned to.
+	Config.set_value("mode", SubsonicHifi.Mode.RADIO)
+	var fm_unit := (load("res://mods/xenu.subsonic/scenes/subsonic_hifi.tscn") as PackedScene).instantiate() as SubsonicHifi
+	add_child(fm_unit)
+	await _frames(2)
+	_check(fm_unit.mode == SubsonicHifi.Mode.RADIO and str(fm_unit.station.get("url", "")) == "https://nightwave.example/live" and fm_unit.source == SubsonicHifi.Source.RADIO, "and the station it was tuned to")
+	fm_unit.queue_free()
+	Config.set_value("mode", null)
+	Config.set_value("last", null)
+	hifi.set_mode(was["mode"])
+	hifi.queue = was["queue"]
+	hifi.station = was["station"]
+	hifi.source = was["source"]
+	hifi._net_source = was["net"]
+	hifi._fm_source = was["fm"]
+	hifi._track_idx = was["idx"]
+	hifi._tracks = was["tracks"]
 
 
 func _stations(hifi: SubsonicHifi, ui: Control) -> void:

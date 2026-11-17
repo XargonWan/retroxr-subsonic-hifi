@@ -121,3 +121,40 @@ static func remove_station(url: String) -> Array:
 	s["stations"] = list
 	save_all(s)
 	return list
+
+
+# --- what was playing -----------------------------------------------------------------------------------
+
+## The longest queue kept between launches (a window of it round the track on, when it is longer).
+const LAST_QUEUE_MAX := 300
+## The song fields kept, with the type each comes back as.
+const _SONG_KEYS := {"id": "", "title": "?", "artist": "", "album": "", "track": 0, "disc": 1, "duration": 0,
+	"suffix": "", "size": 0, "cover": "", "bitrate": 0}
+
+
+## A saved queue, cleaned: only rows with an id, only the fields a song row has, each of its own type.
+static func clean_queue(rows: Variant) -> Array:
+	var out: Array = []
+	if not (rows is Array):
+		return out
+	for r: Variant in rows:
+		if not (r is Dictionary) or str((r as Dictionary).get("id", "")).is_empty():
+			continue
+		var song := {}
+		for k: String in _SONG_KEYS:
+			var def: Variant = _SONG_KEYS[k]
+			var v: Variant = (r as Dictionary).get(k, def)
+			song[k] = str(v) if def is String else int(v)
+		out.append(song)
+		if out.size() >= LAST_QUEUE_MAX:
+			break
+	return out
+
+
+## The queue to write down and where the track on stands in it: the whole queue, or LAST_QUEUE_MAX of it from a little
+## before the track on when it is longer.
+static func window_queue(queue: Array, track: int) -> Dictionary:
+	var start := 0
+	if queue.size() > LAST_QUEUE_MAX:
+		start = clampi(track - 20, 0, queue.size() - LAST_QUEUE_MAX)
+	return {"queue": queue.slice(start, start + LAST_QUEUE_MAX), "track": track - start}
