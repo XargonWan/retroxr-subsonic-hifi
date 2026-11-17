@@ -2,7 +2,7 @@
 ## RetroAudioPlayer with no medium. Run with tests/run_all.py (Godot through the host).
 extends Node
 
-const EXPECTED_CASES := 11
+const EXPECTED_CASES := 12
 const TYPE := "xenu.subsonic:hifi"
 
 var _cases := 0
@@ -39,10 +39,16 @@ func _run() -> void:
 	for item: Dictionary in SpawnCatalog.mod_spawnables():
 		labels.append(item["label"])
 	_check("Subsonic Hi-Fi NAVI-AZ95" in labels, "it is on the SPAWN menu")
+	# On an Electronics-aware RetroXR the hi-fi is on that tab alone; on an older one it falls back to Objects.
+	var electronics: bool = script.has_electronics_tab()
 	var tokens := []
-	for row in SpawnCatalog.objects():
+	for row in (SpawnCatalog.tab_rows("electronics") if electronics else SpawnCatalog.objects()):
 		tokens.append(str(row[1]))
-	_check("mod:%s" % TYPE in tokens, "the Objects tab spawns it as mod:%s" % TYPE)
+	_check("mod:%s" % TYPE in tokens, "the %s tab spawns it as mod:%s" % ["Electronics" if electronics else "Objects", TYPE])
+	var loose := []
+	for row in SpawnCatalog.objects():
+		loose.append(str(row[1]))
+	_check(not electronics or "mod:%s" % TYPE not in loose, "on Electronics it is not also on the Objects tab")
 	var hifi := scene.instantiate()
 	add_child(hifi)
 	await get_tree().process_frame
