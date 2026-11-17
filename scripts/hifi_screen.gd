@@ -67,6 +67,10 @@ var _np_nextb: Button = null
 var _np_shuffle: Button = null
 var _np_repeat: Button = null
 var _np_empty: Label = null
+## A tape carries no information: its page is a counter, the side and the state, nothing more.
+var _np_frame: ColorRect = null
+var _np_counter: Label = null
+var _np_tape_info: Label = null
 var _foot_nodes: Array[Control] = []
 var _filter: ColorRect = null
 
@@ -228,6 +232,7 @@ func _build_now() -> void:
 	frame.size = Vector2(176, 176)
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_np_box.add_child(frame)
+	_np_frame = frame
 	_np_blank = _label(Rect2(8, 44, 176, 176), 64, C_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	_np_blank.text = "♪"
 	_np_cover = TextureRect.new()
@@ -288,6 +293,12 @@ func _build_now() -> void:
 	for b: Button in [_np_shuffle, _np_repeat]:
 		remove_child(b)
 		_np_box.add_child(b)
+	_np_counter = _label(Rect2(14, 62, 612, 100), 84, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	_np_tape_info = _label(Rect2(14, 168, 612, 30), 24, C_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+	for l: Label in [_np_counter, _np_tape_info]:
+		remove_child(l)
+		l.visible = false
+		_np_box.add_child(l)
 	_np_empty = _label(Rect2(14, 100, 612, 80), 22, C_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 	_np_empty.text = "NOTHING IS PLAYING\nPick something from the menu"
 	remove_child(_np_empty)
@@ -395,6 +406,16 @@ func _draw_now() -> void:
 		n.visible = on
 	if not on:
 		return
+	if bool(_now.get("tape", false)):
+		_draw_tape()
+		return
+	_np_counter.visible = false
+	_np_tape_info.visible = false
+	_np_frame.visible = true
+	_np_prev.visible = true
+	_np_nextb.visible = true
+	_np_shuffle.visible = true
+	_np_repeat.visible = true
 	var radio := str(_now.get("source", "")) == "radio"
 	var title := str(_now.get("title", ""))
 	_np_title.text = title if title != "" else str(_now.get("station", ""))
@@ -433,6 +454,26 @@ func _draw_now() -> void:
 	var rep := int(_now.get("repeat", 0))
 	_np_repeat.text = ["REPEAT", "REP ALL", "REP ONE"][rep]
 	_np_repeat.add_theme_color_override("font_color", C_CURSOR_TEXT if rep > 0 else C_TEXT)
+
+
+## A cassette in the bay: what a tape deck shows, the time run on the side and the side and the state under it. No
+## title, no cover, no next track: the tape holds none of it (a seek is the deck's REW and FF). This is TAPE's home, so it
+## is up with the deck stopped and with no cassette too.
+func _draw_tape() -> void:
+	for n: Control in [_np_cover, _np_blank, _np_title, _np_artist, _np_album, _np_info, _np_next, _np_bar,
+			_np_elapsed, _np_total, _np_frame, _np_prev, _np_nextb, _np_shuffle, _np_repeat, _np_empty]:
+		n.visible = false
+	_np_counter.visible = true
+	_np_tape_info.visible = true
+	var loaded := bool(_now.get("loaded", true))
+	var paused := bool(_now.get("paused", false))
+	var stopped := bool(_now.get("stopped", false))
+	_np_counter.text = Api.format_time(int(float(_now.get("position", 0)))) if loaded else "--:--"
+	_np_play.text = TransportGlyphs.glyph("play" if paused or stopped else "pause")
+	if not loaded:
+		_np_tape_info.text = "NO CASSETTE"
+	else:
+		_np_tape_info.text = "SIDE %s   %s" % [str(_now.get("side", "A")), "STOPPED" if stopped else ("PAUSED" if paused else "PLAY")]
 
 
 func _draw_rows(p: Dictionary) -> void:
@@ -510,6 +551,13 @@ func _draw_foot() -> void:
 		_foot_title.text = "—"
 		_foot_sub.text = "stopped"
 		_foot_time.text = ""
+		_bar_fill.size.x = 0
+		_cover.visible = false
+		return
+	if bool(_now.get("tape", false)):
+		_foot_title.text = "TAPE  SIDE %s" % str(_now.get("side", "A"))
+		_foot_sub.text = "paused" if bool(_now.get("paused", false)) else "playing"
+		_foot_time.text = Api.format_time(int(float(_now.get("position", 0))))
 		_bar_fill.size.x = 0
 		_cover.visible = false
 		return

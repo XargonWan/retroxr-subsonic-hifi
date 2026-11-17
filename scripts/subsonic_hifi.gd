@@ -70,11 +70,14 @@ var cover: Texture2D = null
 ## Triangles the body draws (a test holds it to a budget).
 var body_triangles := 0
 
-## A word the screen shows for a moment (the LEVEL knob's setting); "" when there is none.
+## A word the screen shows for a moment (the VOLUME knob's setting); "" when there is none.
 var osd := ""
 var _slot_cd: MediaSlot = null
 var _slot_tape: MediaSlot = null
+var _tape_door: DeckDrawer = null
+## What NET and FM were each left on (the queue; the station), taken up again when the function comes back.
 var _net_source := Source.NONE
+var _fm_source := Source.NONE
 var _mode_ready := false
 var _screen: Node3D = null
 var _covers := {}
@@ -88,6 +91,19 @@ var _stream_started_msec := 0
 var _loading_idx := -1
 var _downloading := {}
 var _radio_timer: Timer = null
+## What was playing when the unit was last used (Config "last": {"net": {queue, track, pos, playing}, "fm": {station,
+## playing}}), loaded on start and taken up once the unit has power: {"mode", "pos", "playing"}. Empty when there is none.
+var _resume := {}
+## A sign-in is on its way; and why the last one was refused (shown by the menu).
+var _signing_in := false
+var _tape_autoplay_pending := false
+var _adopt_ticks := 8
+var sign_in_error := ""
+var _memory_timer: Timer = null
+var _memory_sig := ""
+var _memory_msec := 0
+## How often the position is written down while something plays (s).
+const MEMORY_SECONDS := 10
 var _radio_retries := 0
 var _radio_wanted := false
 
@@ -110,6 +126,11 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	# The base deck wants a media group; nothing is ever seated here, the queue is the medium.
 	_media_group = "subsonic_queue"
+	# The game saves anything it stamped as a mod's object as a bare prop (its pose and nothing else), which would leave
+	# the discs and cassettes in the bays out of the room's save. Without the stamp it is saved as the deck it is (a
+	# RetroAudioPlayer, under deck_save_type()), with the medium in it, and loaded back through the same type.
+	if has_meta(&"mod_object_type"):
+		remove_meta(&"mod_object_type")
 	super._ready()
 	add_to_group("subsonic_hifi")
 	# libVLC says when a stream cannot be opened; the base deck listens only for the end of a track.
@@ -162,7 +183,10 @@ func _setup_loader() -> void:
 	(get_node("ModeButton") as VRButton).button_pressed.connect(cycle_mode)
 	(get_node("TapeEjectButton") as VRButton).button_pressed.connect(func() -> void:
 		if _mains_gate("EJECT"):
-			_slot_tape.toggle_eject())
+			if _tape_door != null:
+				_tape_door.press()
+			else:
+				_slot_tape.toggle_eject())
 	(get_node("CdEjectButton") as VRButton).button_pressed.connect(func() -> void:
 		if _mains_gate("EJECT"):
 			_slot_cd.toggle_eject())
@@ -215,6 +239,21 @@ func _build_bays() -> void:
 	add_child(_slot_tape)
 	_slot_tape.inserted.connect(_on_tape_in)
 	_slot_tape.removed.connect(_on_tape_out)
+	# The door is the base game's own: it tips out carrying the cassette (as the RETRO XR cassette deck's does).
+	var tm := get_node_or_null("TapeModel") as ApplianceModel
+	if tm != null and tm.has_animation("Open"):
+		_tape_door = DeckDrawer.new()
+		_tape_door.name = "TapeDoor"
+		_tape_door.host = self
+		_tape_door.model = tm
+		_tape_door.slot = _slot_tape
+		_tape_door.zone = zone
+		_tape_door.seat_part = "TapeSeat"
+		_tape_door.tag = "Subsonic"
+		add_child(_tape_door)
+		_tape_door.setup()
+	else:
+		print("[Subsonic] %s: no cassette door model: the cassette goes straight into the bay" % name)
 
 
 func _build_screen() -> void:
@@ -546,9 +585,44 @@ func _side_length(a_s: float, b_s: float) -> float:
 	return TapeSides.side_s(minutes)
 
 
-## A bay's medium does not start by itself: PLAY does, as on a combination set.
+## A cassette front-loads and plays, as on the game's own cassette deck (so it carries on when a room is loaded); a disc
+## waits for PLAY. With no power it plays as soon as there is (_memory_tick).
 func _autoplay_on_load() -> bool:
-	return false
+	if mode != Mode.TAPE:
+		return false
+	_tape_autoplay_pending = true
+	return true
+
+
+## The medium the room's save records for this deck: the one of the function that is on, else whichever bay holds one.
+## (The game's deck entry names one medium; the other is put back in its bay by _adopt_loose_media.)
+func get_snapped_media() -> Node3D:
+	if _snapped_media != null:
+		return _snapped_media
+	for slot: MediaSlot in [_slot_tape, _slot_cd]:
+		if slot != null and slot.has_media():
+			return slot.get_media()
+	return null
+
+
+## A disc or a cassette that came back with the room and lies inside the unit without a bay holding it (the game's entry
+## names one medium only): put it in its own bay.
+func _adopt_loose_media() -> void:
+	for pair: Array in [[_slot_cd, &"audio_disc"], [_slot_tape, &"audio_cassette"]]:
+		var slot: MediaSlot = pair[0]
+		if slot == null or slot.has_media():
+			continue
+		for node: Node in get_tree().get_nodes_in_group(pair[1]):
+			var m := node as Node3D
+			if m == null or not is_instance_valid(m) or m == _snapped_media or not m.is_inside_tree():
+				continue
+			if m.has_method("is_picked_up") and m.call("is_picked_up"):
+				continue
+			var local := to_local(m.global_position)
+			if absf(local.x) < Body.FULL_W / 2.0 and absf(local.y) < Body.H / 2.0 and absf(local.z) < Body.D / 2.0:
+				print("[Subsonic] %s: %s came back inside the unit with no bay holding it: put in the %s bay" % [name, m.name, "CD" if slot == _slot_cd else "TAPE"])
+				slot.restore(m)
+				break
 
 
 func restore_media(media: Node3D, yaw: float = 0.0, side_out: int = 0) -> void:
@@ -788,6 +862,7 @@ func toggle_pause() -> void:
 
 
 func stop() -> void:
+	_tape_autoplay_pending = false
 	_loading_idx = -1
 	if source == Source.RADIO:
 		_radio_wanted = false
@@ -1117,6 +1192,9 @@ func _poll_radio() -> void:
 ## seconds (0 for a station), `source` ("library" | "radio"), and for the screen `paused`, `index` / `count` in the
 ## queue, `format` ("FLAC 1000 kbps"), `next` (what comes next), `shuffle`, `repeat`.
 func now_playing() -> Dictionary:
+	# A tape deck always has its counter to show, playing or not: the page is TAPE's home.
+	if mode == Mode.TAPE and source == Source.MEDIA:
+		return _media_now_playing()
 	if not is_playing:
 		return {}
 	if source == Source.RADIO:
@@ -1147,7 +1225,13 @@ func _media_now_playing() -> Dictionary:
 		title = _tracks[_track_idx].get_file().get_basename()
 	var fmt := "CD" if mode == Mode.CD else "TAPE  SIDE %s" % TapeSides.side_name(_side)
 	var after := _pick_preview() if mode == Mode.CD else (_track_idx + 1 if _track_idx + 1 < _tracks.size() else -1)
-	return {"source": "media", "title": title, "artist": "", "album": media_label(), "position": _vlc_time_sec(),
+	# A tape's counter is the time run on the side (what is written on the cassette), playing or stopped.
+	var pos := _vlc_time_sec()
+	var tape := _tape()
+	if mode == Mode.TAPE and tape != null and _laid_out():
+		pos = _tape_side_time(tape)
+	return {"source": "media", "tape": mode == Mode.TAPE, "side": TapeSides.side_name(_side), "title": title, "artist": "", "album": media_label(), "position": pos,
+		"loaded": has_media_in_bay(), "stopped": not is_playing,
 		"length": _vlc_length_sec(), "paused": is_paused(), "index": _track_idx, "count": _tracks.size(), "format": fmt,
 		"next": _tracks[after].get_file().get_basename() if after >= 0 and after < _tracks.size() else "",
 		"shuffle": shuffle if mode == Mode.CD else false, "repeat": repeat if mode == Mode.CD else 0}

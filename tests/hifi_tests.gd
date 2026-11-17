@@ -350,15 +350,28 @@ func _modes(hifi: SubsonicHifi) -> void:
 	hifi.is_playing = true
 	np = hifi.now_playing()
 	_check(np["format"] == "TAPE  SIDE A" and np["title"] == "01 First", "a tape says its side")
+	_check(bool(np.get("tape", false)) and np["side"] == "A", "and tells the screen it is a tape")
+	var tui := hifi.get_node("Screen/Viewport").get_child(0)
+	hifi.browser.go_home()
+	hifi.browser.activate({"text": "Now playing", "act": "open", "arg": "now"})
+	await _frames(2)
+	_check(tui._np_counter.visible and tui._np_tape_info.text.begins_with("SIDE A") and not tui._np_title.visible and not tui._np_artist.visible
+		and not tui._np_next.visible and not tui._np_shuffle.visible and not tui._np_cover.visible, "a tape's page is a counter and its side: no title, cover, next track or shuffle")
 	hifi.is_playing = false
+	# TAPE's home is the counter page, stopped too; and says so with no cassette.
+	hifi.browser.go_home()
+	await _frames(2)
+	_check(hifi.browser.page()["kind"] == "now" and tui._np_counter.visible and tui._np_tape_info.text.contains("STOPPED"), "TAPE's home is the counter page, up with the deck stopped")
 	# Taking the cassette out of its bay empties that function only.
 	hifi._on_tape_out()
+	await _frames(2)
+	_check(tui._np_tape_info.text == "NO CASSETTE" and tui._np_counter.text == "--:--", "and with no cassette it says NO CASSETTE")
 	_check(not hifi.has_media_in_bay() and hifi._tracks.is_empty(), "a cassette out leaves the tape function empty")
 	hifi.set_mode(SubsonicHifi.Mode.CD)
 	_check(hifi.has_media_in_bay(), "while the disc is still in its own bay")
 	# NET content asked for from another function switches to NET.
 	hifi.play_station({"name": "Nowhere", "url": "http://127.0.0.1:9/stream.mp3"})
-	_check(hifi.mode == SubsonicHifi.Mode.INTERNET and hifi.source == SubsonicHifi.Source.RADIO, "tuning a station from CD goes to NET")
+	_check(hifi.mode == SubsonicHifi.Mode.RADIO and hifi.source == SubsonicHifi.Source.RADIO and _led_lit(hifi, 3), "tuning a station from CD goes to FM")
 	hifi.stop()
 	hifi.station = {}
 	hifi.source = SubsonicHifi.Source.NONE

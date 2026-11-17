@@ -31,9 +31,20 @@ const SCREEN := Vector2(0.200, 0.100)
 const SCREEN_AT := Vector2(-0.0945, 0.0457)
 
 ## The cassette bay (top right): the opening's centre and size (a cassette is 100.4 x 63.8 mm) and its EJECT key.
-const TAPE_AT := Vector2(0.1207, 0.0479)
-const TAPE_OPENING := Vector2(0.120, 0.080)
-const TAPE_EJECT_AT := Vector2(0.200, 0.0167)
+const TAPE_AT := Vector2(0.1167, 0.0479)
+const TAPE_OPENING := Vector2(0.134, 0.080)
+const TAPE_EJECT_AT := Vector2(0.2000, 0.0167)
+## The cassette's door is the base game's own (the RETRO XR cassette deck's Door: a tray that tips out carrying the
+## cassette, behind a glass), standing in the opening. These are its model's numbers (cassette_contract.json): the
+## door's centre in the model, how far behind the fascia's face its back reaches (the well the body is cut for).
+const TAPE_DECK_DIR := "res://imported-assets/appliances/cassette_deck/"
+const TAPE_DECK_LEVELS := ["cassette_mobile.glb", "cassette_mobile_lod1.glb", "cassette_mobile_lod2.glb"]
+const TAPE_DOOR_CENTRE := Vector2(-0.132, -0.005)
+const TAPE_WELL_DEPTH := 0.0195
+## What of that model is not the door: the rest of the deck, which this unit draws for itself.
+const TAPE_DECK_PARTS_HIDDEN := ["Body", "BodyPrint", "ButtonCounterReset", "ButtonEject", "ButtonFastForward", "ButtonPause",
+	"ButtonPlay", "ButtonRecord", "ButtonRewind", "ButtonStop", "Display", "IrReceiver", "PhonesOut", "PowerCordExit",
+	"AudioLOut", "AudioROut"]
 ## The CD bay (across the foot): the plate, the slot in it (a disc is 120 mm) and its EJECT key.
 const CD_PLATE_AT := Vector2(-0.043, -0.0857)
 const CD_PLATE := Vector2(0.317, 0.0364)
@@ -134,17 +145,33 @@ static func build(host: Node3D, model: Node3D) -> int:
 	var graphite := _mat("graphite", GRAPHITE, 0.2, 0.5)
 	var silver := _mat("silver", SILVER, 0.3, 0.4)
 	var black := _mat("black", Color(0.012, 0.014, 0.018), 0.0, 0.25)
-	_box(model, "Chassis", Vector3(W - 0.004, H - 0.006, D - 0.012), Vector3(0.0, 0.0, -0.006), graphite)
-	_box(model, "Fascia", Vector3(W, H, 0.012), Vector3(0.0, 0.0, FRONT - 0.006), silver)
+	var door := tape_door_scenes()
+	if door.is_empty():
+		print("[Subsonic] the base game's cassette door is not there: the cassette bay is a plain pocket")
+		_box(model, "Chassis", Vector3(W - 0.004, H - 0.006, D - 0.012), Vector3(0.0, 0.0, -0.006), graphite)
+		_box(model, "Fascia", Vector3(W, H, 0.012), Vector3(0.0, 0.0, FRONT - 0.006), silver)
+	else:
+		# The body is cut for the cassette's door: the fascia and the front of the chassis have the opening, the chassis
+		# behind them is the well's floor.
+		var opening := Rect2(TAPE_AT - TAPE_OPENING / 2.0, TAPE_OPENING)
+		var well_z := FRONT - TAPE_WELL_DEPTH
+		var back_z := BACK + 0.006
+		_box(model, "Chassis", Vector3(W - 0.004, H - 0.006, well_z - back_z), Vector3(0.0, 0.0, (well_z + back_z) / 2.0), graphite)
+		_frame(model, "ChassisFront", Vector2(W - 0.004, H - 0.006), opening, well_z, FRONT - 0.012, graphite)
+		_frame(model, "Fascia", Vector2(W, H), opening, FRONT - 0.012, FRONT, silver)
 	_box(model, "TopPlate", Vector3(W - 0.012, 0.004, D - 0.02), Vector3(0.0, H / 2.0 - 0.001, -0.012), graphite)
 	# The LCD: a black bezel box standing 1.5 mm out of the fascia, the glass set into it.
 	_box(model, "Bezel", Vector3(SCREEN.x + 0.016, SCREEN.y + 0.016, 0.0030), Vector3(SCREEN_AT.x, SCREEN_AT.y, FRONT + 0.0015), black)
-	# The cassette bay: a dark pocket the cassette goes into, in a thin frame.
-	_box(model, "TapeFrame", Vector3(TAPE_OPENING.x + 0.008, TAPE_OPENING.y + 0.008, 0.0016), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
-	_box(model, "TapePocket", Vector3(TAPE_OPENING.x, TAPE_OPENING.y, 0.0022), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0011), black)
+	if door.is_empty():
+		# The cassette bay: a dark pocket the cassette goes into, in a thin frame.
+		_box(model, "TapeFrame", Vector3(TAPE_OPENING.x + 0.008, TAPE_OPENING.y + 0.008, 0.0016), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
+		_box(model, "TapePocket", Vector3(TAPE_OPENING.x, TAPE_OPENING.y, 0.0022), Vector3(TAPE_AT.x, TAPE_AT.y, FRONT + 0.0011), black)
+	else:
+		_tape_door(host, door)
 	# The CD bay: a plate across the foot with the slot in it.
 	_box(model, "CdPlate", Vector3(CD_PLATE.x, CD_PLATE.y, 0.0016), Vector3(CD_PLATE_AT.x, CD_PLATE_AT.y, FRONT + 0.0008), _mat("frame", Color(0.30, 0.31, 0.34), 0.3, 0.4))
 	_box(model, "CdSlot", CD_SLOT_BOX, Vector3(CD_AT.x, CD_AT.y, FRONT + 0.0014), black)
+	_speakers(model, graphite)
 	for fx in [-1.0, 1.0]:
 		for fz in [-1.0, 1.0]:
 			var foot := MeshInstance3D.new()
