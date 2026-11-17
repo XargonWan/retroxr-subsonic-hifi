@@ -58,17 +58,19 @@ const NAV_PITCH := 0.0188
 const MODE_AT := Vector2(0.0524, -0.044)
 const MODE_CAP := Vector3(0.034, 0.016, 0.006)
 const LED_Y := -0.0252
-const LED_XS := [0.0385, 0.0525, 0.0675]
-const LED_NAMES := ["CD", "TAPE", "NET"]
+const LED_XS := [0.0314, 0.0454, 0.0594, 0.0734]
+const LED_NAMES := ["CD", "TAPE", "NET", "FM"]
 
-## PHONES at the left of the pair, the big LEVEL knob at the right (it has the room there).
+## PHONES at the left of the pair, the big VOLUME knob at the right (it has the room there).
 const PHONES_AT := Vector2(0.0975, -0.041)
 const KNOB_AT := Vector2(0.1645, -0.0416)
 const KNOB_RADIUS := 0.0195
 const KNOB_HEIGHT := 0.016
 
-## The navigation keys, top to bottom: node name, glyph. (There is no OK: PLAY opens the row the cursor was moved to.)
-const NAV_COLUMN := [["MenuButton", "menu"], ["BackButton", "left"], ["UpButton", "up"], ["DownButton", "down"]]
+## The navigation keys, top to bottom: node name, glyph, and a word where the cap prints one instead of a glyph. (There
+## is no OK: PLAY opens the row the cursor was moved to. NOW opens, and closes again, the Now playing page.)
+const NAV_COLUMN := [["MenuButton", "menu"], ["BackButton", "left"], ["UpButton", "up"], ["DownButton", "down"],
+	["NowButton", "", "NOW"]]
 ## The transport keys: the base scene's own (REW and FF are kept: a tape and a disc scan), in order along the row.
 const TRANSPORT_ROW := [["RewindButton", "rew"], ["PrevButton", "prev"], ["PlayButton", "play"], ["PauseButton", "pause"],
 	["StopButton", "stop"], ["NextButton", "next"], ["FastForwardButton", "ff"]]
@@ -79,7 +81,7 @@ const KEY_PLASTIC := Color(0.58, 0.60, 0.64)
 const GLYPH := Color(0.06, 0.07, 0.09)
 const PRINT := Color(0.16, 0.17, 0.20)
 ## The mode LEDs when lit (CD, TAPE, NET) and when dark.
-const LED_ON := [Color(0.35, 0.75, 1.0), Color(1.0, 0.62, 0.15), Color(0.35, 1.0, 0.45)]
+const LED_ON := [Color(0.35, 0.75, 1.0), Color(1.0, 0.62, 0.15), Color(0.35, 1.0, 0.45), Color(1.0, 0.35, 0.35)]
 const LED_OFF := Color(0.07, 0.075, 0.08)
 
 static var _mats := {}
@@ -330,7 +332,7 @@ static func _dress_keys(host: Node3D) -> int:
 		var b := template.duplicate() as VRButton
 		b.name = str(spec[0])
 		host.add_child(b)
-		tris += _cap(b, Vector3(NAV_X, NAV_Y0 - i * NAV_PITCH, FRONT), str(spec[1]))
+		tris += _cap(b, Vector3(NAV_X, NAV_Y0 - i * NAV_PITCH, FRONT), str(spec[1]), str(spec[2]) if spec.size() > 2 else "")
 	var mode := template.duplicate() as VRButton
 	mode.name = "ModeButton"
 	host.add_child(mode)

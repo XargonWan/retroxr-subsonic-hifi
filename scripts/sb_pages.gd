@@ -21,6 +21,11 @@ const RESULTS := "results"
 const PLAYLISTS := "playlists"
 const PLAYLIST := "playlist"
 const RADIO := "radio"
+## The unit's NET and FM functions as the `mode` action and the home pages number them (SubsonicHifi.Mode).
+const MODE_CD := 0
+const MODE_TAPE := 1
+const MODE_NET := 2
+const MODE_FM := 3
 const NOW := "now"
 const TRACKS := "tracks"
 
@@ -174,7 +179,8 @@ static func row(text: String, act: String, arg: Variant = null, sub := "") -> Di
 	return {"text": text, "sub": sub, "act": act, "arg": arg}
 
 
-static func home_rows(signed_in: bool, station_count: int, now_on: bool) -> Array:
+## The home page of NET: the server's library. (The radio is its own function, FM.)
+static func home_rows(signed_in: bool, now_on: bool) -> Array:
 	var rows: Array = []
 	if now_on:
 		rows.append(row("Now playing", "open", NOW))
@@ -186,24 +192,30 @@ static func home_rows(signed_in: bool, station_count: int, now_on: bool) -> Arra
 		rows.append(row("Search", "open", SEARCH))
 	else:
 		rows.append(row("Not signed in", "none", null, "open the TAB menu: Server"))
-	rows.append(row("Radio", "open", RADIO, "%d station%s" % [station_count, "" if station_count == 1 else "s"]))
 	return rows
 
 
-## The home page of the CD and TAPE functions: what is in the bay, its tracks, EJECT, and the way to NET.
-static func media_home_rows(mode_name: String, has_media: bool, label: String, track_count: int, now_on: bool) -> Array:
+## The home page of FM: the stations, the one on air marked, and Now playing above them while something plays.
+static func fm_home_rows(stations: Array, on_air: String, now_on: bool) -> Array:
 	var rows: Array = []
 	if now_on:
 		rows.append(row("Now playing", "open", NOW))
-	if has_media:
-		rows.append(row(label if label != "" else ("Disc" if mode_name == "CD" else "Cassette"), "none", null,
-			"%d track%s" % [track_count, "" if track_count == 1 else "s"]))
-		if track_count > 0:
-			rows.append(row("Tracks", "open", TRACKS))
-		rows.append(row("Eject", "eject"))
-	else:
-		rows.append(row("No disc" if mode_name == "CD" else "No cassette", "none", null, "put one in the bay below"))
-	rows.append(row("Internet (NET)", "mode", 2))
+	rows.append_array(station_rows(stations, on_air))
+	return rows
+
+
+## The home page of CD: the disc's own tracks, straight away (the track on is the strip at the foot, and Now playing a
+## tap or the NOW key away). TAPE has no list: its home is the Now playing page (an analog medium names nothing).
+static func cd_home_rows(has_media: bool, tracks: Array) -> Array:
+	if not has_media:
+		return [row("No disc", "none", null, "put one in the bay below")]
+	if tracks.is_empty():
+		return [row("No tracks", "none", null, "this disc has none to play")]
+	var rows: Array = []
+	var i := 0
+	for t: String in tracks:
+		rows.append(row("%d. %s" % [i + 1, t], "play_track", i))
+		i += 1
 	return rows
 
 

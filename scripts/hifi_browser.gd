@@ -43,27 +43,54 @@ func signed_in() -> bool:
 ## Rebuild the home page's rows (it depends on the login, the stations and what is playing).
 func refresh_home() -> void:
 	var p: Dictionary = pages.stack[0]
-	if hifi != null and int(hifi.get("mode")) != 2:
-		var tracks: Array = hifi.call("media_tracks")
-		pages.set_rows(p, Pages.media_home_rows(str(hifi.call("mode_name")), bool(hifi.call("has_media_in_bay")),
-			str(hifi.call("media_label")), tracks.size(), now_on()))
-		changed.emit()
-		return
-	pages.set_rows(p, Pages.home_rows(signed_in(), (hifi.call("stations") as Array).size() if hifi != null else 0, now_on()))
+	var m := int(hifi.get("mode")) if hifi != null else Pages.MODE_NET
+	# TAPE's home IS the Now playing page; every other function's is a list.
+	p["kind"] = Pages.NOW if m == Pages.MODE_TAPE else Pages.HOME
+	p["title"] = "NAVI-AZ95"
+	if m == Pages.MODE_TAPE:
+		pass
+	elif m == Pages.MODE_CD:
+		var has_disc := bool(hifi.call("has_media_in_bay"))
+		if has_disc and str(hifi.call("media_label")) != "":
+			p["title"] = str(hifi.call("media_label"))
+		pages.set_rows(p, Pages.cd_home_rows(has_disc, hifi.call("media_tracks")))
+	elif m == Pages.MODE_FM:
+		pages.set_rows(p, Pages.fm_home_rows(hifi.call("stations"), _on_air(), now_on()))
+	else:
+		pages.set_rows(p, Pages.home_rows(signed_in(), now_on()))
 	changed.emit()
+
+
+## The url of the station on air, or "".
+func _on_air() -> String:
+	if hifi != null and int(hifi.get("source")) == 2 and not (hifi.get("station") as Dictionary).is_empty():
+		return str((hifi.get("station") as Dictionary).get("url", ""))
+	return ""
 
 
 # --- keys of the unit and presses on the screen ----------------------------------------------------------
 
-## "up" "down" "left" "right" "ok" "back" "menu". On a list: up/down move the cursor, left/right turn the page. On the
+## "up" "down" "left" "right" "ok" "back" "menu" "now". On a list: up/down move the cursor, left/right turn the page. On the
 ## keyboard all four move over the keys.
 func nav(cmd: String) -> void:
 	var p := page()
 	# A cursor moved from the unit's own keys is a choice: PLAY then acts on it (try_activate).
 	if cmd in ["up", "down", "left", "right"]:
 		p["armed"] = true
-	elif cmd == "ok" or cmd == "back" or cmd == "menu":
+	elif cmd == "ok" or cmd == "back" or cmd == "menu" or cmd == "now":
 		p["armed"] = false
+	if cmd == "now":
+		# The unit's NOW key: the page of what is playing, and a second press goes back to where it was opened from.
+		if p["kind"] == Pages.NOW:
+			# On TAPE the page is the home: there is nothing to go back to.
+			if pages.depth() > 1:
+				print("[Subsonic] NOW key: closing Now playing")
+				back()
+		else:
+			print("[Subsonic] NOW key: opening Now playing")
+			activate(Pages.row("Now playing", "open", Pages.NOW))
+		changed.emit()
+		return
 	if p["kind"] == Pages.SEARCH:
 		_keyboard_nav(p, cmd)
 		return
@@ -114,6 +141,11 @@ func back() -> void:
 func go_home() -> void:
 	pages.home()
 	refresh_home()
+	# On FM the stations are the home page: the server's own list is asked again and the page follows it.
+	if hifi != null and int(hifi.get("mode")) == Pages.MODE_FM:
+		hifi.call("refresh_server_stations", func(_all: Array) -> void:
+			if pages.depth() == 1:
+				refresh_home())
 
 
 func _fix_home() -> void:
@@ -207,10 +239,7 @@ func _open(kind: String, title: String) -> void:
 
 
 func _fill_radio(p: Dictionary) -> void:
-	var on_air := ""
-	if hifi != null and int(hifi.get("source")) == 2 and not (hifi.get("station") as Dictionary).is_empty():
-		on_air = str((hifi.get("station") as Dictionary).get("url", ""))
-	pages.set_rows(p, Pages.station_rows(hifi.call("stations") if hifi != null else [], on_air))
+	pages.set_rows(p, Pages.station_rows(hifi.call("stations") if hifi != null else [], _on_air()))
 
 
 func _albums(kind: String, title: String) -> void:

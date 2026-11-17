@@ -8,7 +8,7 @@ const Browser = preload("res://mods/xenu.subsonic/scripts/hifi_browser.gd")
 const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 
-const EXPECTED_CASES := 64
+const EXPECTED_CASES := 65
 
 var _cases := 0
 var _failed := 0
@@ -56,7 +56,7 @@ class FakeHifi extends RefCounted:
 		return merged
 
 	func mode_name() -> String:
-		return ["CD", "TAPE", "NET"][mode]
+		return ["CD", "TAPE", "NET", "FM"][mode]
 
 	func has_media_in_bay() -> bool:
 		return media
@@ -159,7 +159,7 @@ func _home(b: RefCounted, h: FakeHifi) -> void:
 	_eq(_texts(b)[0], "Artists", "signed in: home starts with Artists")
 	h.signed = false
 	b.refresh_home()
-	_eq(_texts(b), ["Not signed in", "Radio"], "signed out: home says so and keeps the radio")
+	_eq(_texts(b), ["Not signed in"], "signed out: home says so")
 	b.nav("ok")
 	_eq(b.pages.depth(), 1, "OK on the not-signed-in row does nothing")
 	h.signed = true
@@ -187,6 +187,10 @@ func _library(b: RefCounted, h: FakeHifi) -> void:
 	b.nav("back")
 	b.go_home()
 	_eq(b.pages.depth(), 1, "MENU goes home")
+	b.nav("now")
+	_eq(b.page()["kind"], Pages.NOW, "the NOW key opens Now playing from anywhere")
+	b.nav("now")
+	_eq([b.page()["kind"], b.pages.depth()], [Pages.HOME, 1], "a second press of NOW goes back to where it was opened from")
 	b.nav("down")                    # New albums
 	b.nav("ok")
 	_eq([b.page()["kind"], _texts(b)], [Pages.ALBUMS, ["Newest"]], "an album list opens")
@@ -213,7 +217,7 @@ func _library(b: RefCounted, h: FakeHifi) -> void:
 	_eq(b.page()["rows"][0]["sub"], "1976", "without the artist's name, the year")
 	b.go_home()
 	b.nav("right")
-	_eq(b.page()["first"], 3, "the nine-row home pages down to its last window")
+	_eq(b.page()["first"], 2, "the eight-row home pages down to its last window")
 	b.activate({"text": "Radio", "act": "open", "arg": Pages.RADIO})
 	b.nav("right")
 	_eq(b.page()["first"], 0, "paging a one-row list stays on page one")
@@ -323,31 +327,23 @@ func _media_modes(b: RefCounted, h: FakeHifi) -> void:
 	h.mode = 0
 	h.media = false
 	b.go_home()
-	_eq(_texts(b), ["No disc", "Internet (NET)"], "CD with an empty bay: say so, and offer NET")
+	_eq(_texts(b), ["No disc"], "CD with an empty bay: say so")
 	h.media = true
 	b.go_home()
-	_eq(_texts(b), ["Disc X", "Tracks", "Eject", "Internet (NET)"], "CD with a disc: its label, Tracks, Eject, NET")
-	_eq(b.page()["rows"][0]["sub"], "2 tracks", "and how many tracks it has")
-	b.nav("down")
-	b.nav("ok")
-	_eq([b.page()["kind"], _texts(b)], [Pages.TRACKS, ["1. One", "2. Two"]], "Tracks lists the disc")
+	_eq([_texts(b), b.page()["title"], b.page()["kind"]], [["1. One", "2. Two"], "Disc X", Pages.HOME], "CD with a disc: its tracks straight away, the disc's name on top")
 	b.nav("down")
 	b.nav("ok")
 	_eq(h.goto, [1], "a track on the list plays that track")
+	h.mode = 1
 	b.go_home()
-	b.nav("down")
-	b.nav("down")
-	b.nav("ok")
-	_eq(h.ejected, 1, "Eject ejects")
-	b.go_home()
-	b.nav("down")
-	b.nav("down")
-	b.nav("down")
-	b.nav("ok")
-	_eq(h.modes, [2], "Internet (NET) switches function")
+	_eq([b.page()["kind"], b.pages.depth()], [Pages.NOW, 1], "TAPE's home is the Now playing page")
+	b.nav("now")
+	_eq([b.page()["kind"], b.pages.depth()], [Pages.NOW, 1], "and NOW on it does not go anywhere")
+	b.nav("menu")
+	_eq(b.page()["kind"], Pages.NOW, "nor does MENU")
 	h.mode = 2
 	b.go_home()
-	_eq(_texts(b)[0], "Artists", "and the NET home page is back")
+	_eq([_texts(b)[0], b.page()["kind"], b.page()["title"]], ["Artists", Pages.HOME, "NAVI-AZ95"], "and the NET home page is back")
 
 
 func _stale(h: FakeHifi) -> void:

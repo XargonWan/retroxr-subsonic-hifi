@@ -28,8 +28,10 @@ const ViewportScene = preload("res://addons/godot-xr-tools/objects/viewport_2d_i
 
 enum Source { NONE, LIBRARY, RADIO, MEDIA }
 ## The three functions MODE steps through. The values are the order of the keys' LEDs (Body.LED_NAMES) and are SAVED.
-enum Mode { CD, TAPE, INTERNET }
-const MODE_NAMES := ["CD", "TAPE", "NET"]
+## The functions, as the MODE key steps through them. RADIO is written FM on the unit (RADIO does not fit under its LED);
+## the values are saved, so a new function goes at the end.
+enum Mode { CD, TAPE, INTERNET, RADIO }
+const MODE_NAMES := ["CD", "TAPE", "NET", "FM"]
 const SnapHighlightScript = preload("res://Scripts/Objects/highlights/snap_highlight.gd")
 const SnapZoneScene = preload("res://addons/godot-xr-tools/objects/snap_zone.tscn")
 
@@ -151,7 +153,8 @@ func _setup_loader() -> void:
 	set_phones_level(knob.value)
 	_build_bays()
 	browser = Browser.new(self)
-	for spec: Array in [["MenuButton", "menu"], ["BackButton", "back"], ["UpButton", "up"], ["DownButton", "down"]]:
+	for spec: Array in [["MenuButton", "menu"], ["BackButton", "back"], ["UpButton", "up"], ["DownButton", "down"],
+		["NowButton", "now"]]:
 		var cmd: String = spec[1]
 		(get_node(str(spec[0])) as VRButton).button_pressed.connect(func() -> void:
 			if _mains_gate(cmd.to_upper()):
@@ -385,11 +388,11 @@ func _on_ff_pressed() -> void:
 	super._on_ff_pressed()
 
 
-## MODE: CD -> TAPE -> NET -> CD ...
+## MODE: CD -> TAPE -> NET -> FM -> CD ...
 func cycle_mode() -> void:
 	if not _mains_gate("MODE"):
 		return
-	set_mode((int(mode) + 1) % 3)
+	set_mode((int(mode) + 1) % MODE_NAMES.size())
 
 
 func mode_name() -> String:
@@ -397,9 +400,9 @@ func mode_name() -> String:
 
 
 ## Change function. What was playing stops; the new function takes up the medium in ITS bay (a disc, a cassette) or, on
-## NET, the queue or station it was left on. The LED of the mode on lights, the others are dark.
+## NET, the queue it was left on and, on FM, the station. The LED of the mode on lights, the others are dark.
 func set_mode(m: int, save := true) -> void:
-	m = clampi(m, 0, 2)
+	m = clampi(m, 0, MODE_NAMES.size() - 1)
 	if _mode_ready and m == mode:
 		return
 	var first := not _mode_ready
@@ -408,6 +411,8 @@ func set_mode(m: int, save := true) -> void:
 		_halt()
 		if mode == Mode.INTERNET:
 			_net_source = source
+		elif mode == Mode.RADIO:
+			_fm_source = source
 		_radio_wanted = false
 		if _radio_timer != null:
 			_radio_timer.stop()
@@ -428,6 +433,10 @@ func set_mode(m: int, save := true) -> void:
 			for song: Dictionary in queue:
 				if cache != null:
 					_tracks.append(cache.path(_cache_name(song)))
+	elif mode == Mode.RADIO:
+		# The station it was left on waits tuned: PLAY takes it up again.
+		source = _fm_source
+		radio_info = {}
 	else:
 		source = Source.MEDIA
 		var slot := _slot_cd if mode == Mode.CD else _slot_tape
@@ -444,7 +453,7 @@ func _update_leds() -> void:
 	var model := get_node_or_null("Model")
 	if model == null:
 		return
-	for i in 3:
+	for i in Body.LED_NAMES.size():
 		var led := model.get_node_or_null("Led_%s" % Body.LED_NAMES[i]) as MeshInstance3D
 		if led != null:
 			led.material_override = Body.led_material(i, i == int(mode))
@@ -661,8 +670,8 @@ func play_songs(songs: Array, start: int = 0) -> void:
 func play_station(st: Dictionary) -> void:
 	if st.is_empty() or str(st.get("url", "")).is_empty():
 		return
-	if mode != Mode.INTERNET:
-		set_mode(Mode.INTERNET)
+	if mode != Mode.RADIO:
+		set_mode(Mode.RADIO)
 	_halt()
 	source = Source.RADIO
 	station = st

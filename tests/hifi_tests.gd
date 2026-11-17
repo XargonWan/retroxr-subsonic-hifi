@@ -4,8 +4,9 @@ extends Node
 
 const Config = preload("res://mods/xenu.subsonic/scripts/sb_config.gd")
 const Body = preload("res://mods/xenu.subsonic/scripts/hifi_model.gd")
+const Pages = preload("res://mods/xenu.subsonic/scripts/sb_pages.gd")
 const HifiPanel = preload("res://mods/xenu.subsonic/scripts/hifi_options_panel.gd")
-const EXPECTED_CASES := 91
+const EXPECTED_CASES := 117
 const SCRATCH := "user://sb_hifi_scratch"
 
 var _cases := 0
@@ -281,16 +282,19 @@ func _make_album(dir: String, names: Array) -> void:
 
 
 func _modes(hifi: SubsonicHifi) -> void:
-	# The LEDs: one lit, the mode on.
-	_check(hifi.mode == SubsonicHifi.Mode.INTERNET and _led_lit(hifi, 2) and not _led_lit(hifi, 0) and not _led_lit(hifi, 1), "the unit starts on NET with its LED lit and the others dark")
+	# The LEDs: one lit, the mode on. (An earlier case tuned a station, which is FM: back to NET first.)
+	hifi.set_mode(SubsonicHifi.Mode.INTERNET)
+	_check(hifi.mode == SubsonicHifi.Mode.INTERNET and _led_lit(hifi, 2) and not _led_lit(hifi, 0) and not _led_lit(hifi, 1) and not _led_lit(hifi, 3), "NET has its LED lit and the others dark")
 	var mode_key := hifi.get_node("ModeButton") as VRButton
 	mode_key.button_pressed.emit()
-	_check(hifi.mode == SubsonicHifi.Mode.CD and _led_lit(hifi, 0) and not _led_lit(hifi, 2), "MODE steps NET to CD and moves the LED")
+	_check(hifi.mode == SubsonicHifi.Mode.RADIO and _led_lit(hifi, 3) and not _led_lit(hifi, 2) and hifi.mode_name() == "FM", "MODE steps NET to FM (the radio) and moves the LED")
+	mode_key.button_pressed.emit()
+	_check(hifi.mode == SubsonicHifi.Mode.CD and _led_lit(hifi, 0) and not _led_lit(hifi, 3), "then CD and moves the LED")
 	_check(hifi.source == SubsonicHifi.Source.MEDIA and hifi.has_track_skip(), "CD is a disc source, with skip")
 	mode_key.button_pressed.emit()
 	_check(hifi.mode == SubsonicHifi.Mode.TAPE and _led_lit(hifi, 1) and hifi.plays_sides() and not hifi.has_track_skip() and hifi.has_scan(), "then TAPE: a tape plays sides, scans and does not skip")
 	mode_key.button_pressed.emit()
-	_check(hifi.mode == SubsonicHifi.Mode.INTERNET, "and back to NET")
+	_check(hifi.mode == SubsonicHifi.Mode.INTERNET, "and back to NET (after NET, FM, CD, TAPE)")
 	# What NET was left on comes back.
 	hifi.source = SubsonicHifi.Source.LIBRARY
 	hifi.queue = [{"id": "q0", "title": "Q0", "suffix": "mp3"}, {"id": "q1", "title": "Q1", "suffix": "mp3"}]
@@ -325,7 +329,7 @@ func _modes(hifi: SubsonicHifi) -> void:
 	_check(hifi.media_tracks() == ["01 First", "02 Second"], "and named without their extension")
 	hifi.browser.go_home()
 	var home: Array = hifi.browser.page()["rows"].map(func(r: Dictionary) -> String: return r["text"])
-	_check("Tracks" in home and "Eject" in home and "Internet (NET)" in home, "the CD home page offers Tracks, Eject and NET (%s)" % str(home))
+	_check(home == ["1. 01 First", "2. 02 Second"], "the CD home page is the disc's tracks and nothing else (%s)" % str(home))
 	hifi.is_playing = true
 	var np := hifi.now_playing()
 	_check(np["source"] == "media" and np["title"] == "01 First" and np["album"] == "Test Disc" and np["format"] == "CD" and np["next"] == "02 Second" and np["count"] == 2, "now_playing() names the track, the disc and the next track")
