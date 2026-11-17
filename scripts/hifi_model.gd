@@ -2,7 +2,7 @@
 ## chassis with a brushed-silver fascia in three zones, top to bottom:
 ##   - the LCD at the left and the CASSETTE bay at the right,
 ##   - a band under them: the two key rows (menu / navigation, transport) at the left, MODE with its three LEDs, then
-##     LEVEL and PHONES at the right,
+##     VOLUME and PHONES at the right,
 ##   - the CD bay across the foot of the fascia.
 ## Original geometry; the supplied NAVI reference model is not used (it carries no licence).
 ##
@@ -18,6 +18,10 @@ extends RefCounted
 const W := 0.43
 const H := 0.24
 const D := 0.30
+## The two small speakers built into the sides of the unit: each this wide, as high and as deep as the unit. The unit
+## is FULL_W across with them; W is the fascia, which the keys, the LCD and the bays are laid out on.
+const SPK_W := 0.055
+const FULL_W := W + 2.0 * SPK_W
 const FRONT := D / 2.0
 const BACK := -D / 2.0
 
@@ -151,7 +155,7 @@ static func build(host: Node3D, model: Node3D) -> int:
 			cm.rings = 1
 			foot.mesh = cm
 			foot.material_override = black
-			foot.position = Vector3(fx * (W / 2.0 - 0.04), -H / 2.0 - 0.004, fz * (D / 2.0 - 0.04))
+			foot.position = Vector3(fx * (FULL_W / 2.0 - 0.035), -H / 2.0 - 0.004, fz * (D / 2.0 - 0.04))
 			model.add_child(foot)
 	# PHONES is a hole: black inside, a disc just clear of the fascia under the socket's own collar.
 	var hole := MeshInstance3D.new()
@@ -178,12 +182,78 @@ static func build(host: Node3D, model: Node3D) -> int:
 	return tris + _triangles(model)
 
 
+## The unit's own speakers: a cabinet each side of the fascia with a cloth grille over a woofer and a tweeter. The sound
+## comes from here while nothing is cabled to the unit's outputs (subsonic_hifi.gd, _apply_channel_gains).
+static func _speakers(model: Node3D, cabinet: Material) -> void:
+	var grille := _mat("grille", Color(0.62, 0.64, 0.68), 0.0, 0.9)
+	var cone := _mat("cone", Color(0.10, 0.105, 0.115), 0.0, 0.8)
+	for side in [-1.0, 1.0]:
+		var x: float = side * (W / 2.0 + SPK_W / 2.0)
+		var tag := "L" if side < 0.0 else "R"
+		_box(model, "Speaker_%s" % tag, Vector3(SPK_W, H, D), Vector3(x, 0.0, 0.0), cabinet)
+		_box(model, "Grille_%s" % tag, Vector3(SPK_W - 0.012, H - 0.024, 0.0025), Vector3(x, 0.0, FRONT + 0.00125), grille)
+		for ring: Array in [["Woofer", 0.017, -0.026], ["Tweeter", 0.0075, 0.068]]:
+			var cyl := MeshInstance3D.new()
+			cyl.name = "%s_%s" % [ring[0], tag]
+			var cm := CylinderMesh.new()
+			cm.top_radius = float(ring[1])
+			cm.bottom_radius = float(ring[1])
+			cm.height = 0.0008
+			cm.radial_segments = 18
+			cm.rings = 1
+			cyl.mesh = cm
+			cyl.material_override = cone
+			cyl.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), Vector3(x, float(ring[2]), FRONT + 0.0029))
+			model.add_child(cyl)
+
+
+## The base game's cassette deck model, as its three levels of detail; empty when this game does not have it.
+static func tape_door_scenes() -> Array[PackedScene]:
+	var out: Array[PackedScene] = []
+	for f: String in TAPE_DECK_LEVELS:
+		var scene := load(TAPE_DECK_DIR + f) as PackedScene if ResourceLoader.exists(TAPE_DECK_DIR + f) else null
+		if scene == null:
+			return [] as Array[PackedScene]
+		out.append(scene)
+	return out
+
+
+## A slab `z0..z1` deep, `size` across, with a rectangular opening through it: four boxes round the hole.
+static func _frame(parent: Node3D, node_name: String, size: Vector2, hole: Rect2, z0: float, z1: float, mat: Material) -> void:
+	var depth := z1 - z0
+	var zc := (z0 + z1) / 2.0
+	var l := -size.x / 2.0
+	var r := size.x / 2.0
+	var b := -size.y / 2.0
+	var t := size.y / 2.0
+	var hx0 := hole.position.x
+	var hx1 := hole.end.x
+	var hy0 := hole.position.y
+	var hy1 := hole.end.y
+	_box(parent, node_name + "_L", Vector3(hx0 - l, size.y, depth), Vector3((l + hx0) / 2.0, 0.0, zc), mat)
+	_box(parent, node_name + "_R", Vector3(r - hx1, size.y, depth), Vector3((hx1 + r) / 2.0, 0.0, zc), mat)
+	_box(parent, node_name + "_T", Vector3(hx1 - hx0, t - hy1, depth), Vector3((hx0 + hx1) / 2.0, (hy1 + t) / 2.0, zc), mat)
+	_box(parent, node_name + "_B", Vector3(hx1 - hx0, hy0 - b, depth), Vector3((hx0 + hx1) / 2.0, (b + hy0) / 2.0, zc), mat)
+
+
+## Stand the cassette deck model's door in the opening (its centre on TAPE_AT; both models have their front at the
+## same depth), and hide the rest of that deck.
+static func _tape_door(host: Node3D, scenes: Array[PackedScene]) -> void:
+	var tm := ApplianceModel.new()
+	tm.name = "TapeModel"
+	tm.level_scenes = scenes
+	tm.position = Vector3(TAPE_AT.x - TAPE_DOOR_CENTRE.x, TAPE_AT.y - TAPE_DOOR_CENTRE.y, 0.0)
+	host.add_child(tm)
+	for part_name: String in TAPE_DECK_PARTS_HIDDEN:
+		tm.hide_part(part_name)
+
+
 const CD_SLOT_BOX := Vector3(CD_SLOT.x, CD_SLOT.y, 0.0022)
 
 
 ## The three mode LEDs (small boxes on the fascia, named Led_CD / Led_TAPE / Led_NET), all dark; the unit lights one.
 static func _leds(model: Node3D) -> void:
-	for i in 3:
+	for i in LED_NAMES.size():
 		var led := _box(model, "Led_%s" % LED_NAMES[i], Vector3(0.0055, 0.0035, 0.0016), Vector3(LED_XS[i], LED_Y, FRONT + 0.0008), led_material(i, false))
 		led.set_meta(&"led_index", i)
 
@@ -208,25 +278,23 @@ static func _silkscreen(model: Node3D) -> void:
 	var eject_c := _label("EJECT", 26, PRINT)
 	eject_c.position = Vector3(CD_EJECT_AT.x, CD_EJECT_AT.y - 0.0128, top)
 	model.add_child(eject_c)
-	for i in 3:
+	for i in LED_NAMES.size():
 		var t := _label(LED_NAMES[i], 22, PRINT)
 		t.position = Vector3(LED_XS[i], LED_Y + 0.0072, top)
 		model.add_child(t)
 	var phones := _label("PHONES", 28, PRINT)
 	phones.position = Vector3(PHONES_AT.x - 0.001, -0.0215, top)
 	model.add_child(phones)
-	var level := _label("LEVEL", 28, PRINT)
+	var level := _label("VOLUME", 28, PRINT)
 	level.position = Vector3(KNOB_AT.x, KNOB_AT.y + KNOB_RADIUS + 0.0055, top)
 	model.add_child(level)
-	# The back: a plate round the line out, and its legend (facing out of the back: a half turn about Y).
-	var plate := _box(model, "JackPlate", Vector3(0.080, 0.052, 0.002), Vector3(0.124, -0.065, BACK - 0.001), _mat("silver", SILVER, 0.3, 0.4))
-	plate.name = "JackPlate"
-	# [text, x, y]: the legend above the jacks, and L / R below them.
-	for spec: Array in [["LINE OUT", 0.124, -0.0445], ["L", 0.110, -0.0795], ["R", 0.138, -0.0795]]:
-		var t := _label(str(spec[0]), 30 if spec[0] == "LINE OUT" else 36, PRINT)
-		t.rotation = Vector3(0.0, PI, 0.0)
-		t.position = Vector3(float(spec[1]), float(spec[2]), BACK - 0.0022)
-		model.add_child(t)
+	# The scale: the knob sweeps 270 degrees from 0 (marker at the lower left) to 100 (lower right), 50 straight up, so the
+	# percentage on the screen is where the marker stands. Printed at both ends and at the top, in the dead angle's corners.
+	for spec: Array in [["0", 135.0], ["100", -135.0]]:
+		var a := deg_to_rad(float(spec[1]))
+		var tick := _label(str(spec[0]), 22, PRINT)
+		tick.position = Vector3(KNOB_AT.x - sin(a) * (KNOB_RADIUS + 0.0075), KNOB_AT.y + cos(a) * (KNOB_RADIUS + 0.0075), top)
+		model.add_child(tick)
 
 
 static func _label(text: String, size: int, color: Color) -> Label3D:
@@ -330,13 +398,49 @@ static func _cap(b: VRButton, at: Vector3, glyph: String, word := "", cap_size :
 
 # --- jacks, knob, boxes ----------------------------------------------------------------------------------
 
+## The back's analog 5.1 line out, the consumer colour code on the base game's own phono sockets: the scene's AudioLOut and
+## AudioROut are FL and FR (the pair the deck code looks up by name), and four more stand beside them for C, SUB, SL and
+## SR. Seen from behind the row reads FL FR C SUB SL SR left to right (the unit's +X is the viewer's left from there).
+## The cable graph (AvSource.resolve) already takes any of the six cabled to a loudspeaker cabinet as that channel's cabinet.
+const JACKS_OUT := [["AudioLOut", RcaPort.Channel.AUDIO_L, "FL"], ["AudioROut", RcaPort.Channel.AUDIO_R, "FR"],
+	["AudioCOut", RcaPort.Channel.AUDIO_C, "C"], ["AudioLfeOut", RcaPort.Channel.AUDIO_LFE, "SUB"],
+	["AudioSlOut", RcaPort.Channel.AUDIO_SL, "SL"], ["AudioSrOut", RcaPort.Channel.AUDIO_SR, "SR"]]
+const JACK_X0 := 0.1
+const JACK_PITCH := 0.0185
+const JACK_Y := -0.062
+const PORT_SCENE := "res://Scenes/Objects/cables/rca_port.tscn"
+
+
+static func _surround_row(host: Node3D) -> void:
+	var first := host.get_node("AudioLOut") as RcaPort
+	var scene := load(PORT_SCENE) as PackedScene
+	var ports: Array = []
+	var words := {}
+	for i in JACKS_OUT.size():
+		var spec: Array = JACKS_OUT[i]
+		var port := host.get_node_or_null(str(spec[0])) as RcaPort
+		if port == null:
+			port = scene.instantiate() as RcaPort
+			port.name = str(spec[0])
+			port.channel = spec[1]
+			port.direction = RcaPort.Direction.OUT
+			port.transform = first.transform
+			host.add_child(port)
+		port.position = Vector3(JACK_X0 - i * JACK_PITCH, JACK_Y, BACK - 0.009)
+		ports.append(port)
+		words[spec[1]] = spec[2]
+	var legend := AvLegend.attach(host, ports)
+	if legend != null:
+		legend.name = "AvLegend5_1"
+		legend.heading_override = "5.1 OUT"
+		legend.word_override = words
+		legend.rebuild()
+
+
 static func _seat_jacks(host: Node3D) -> void:
 	# The line out on the back (white L, red R), as the base CD player has it: the zones stand 9 mm out of the back.
-	var l := host.get_node("AudioLOut") as Node3D
-	var r := host.get_node("AudioROut") as Node3D
-	l.position = Vector3(0.110, -0.065, BACK - 0.009)
-	r.position = Vector3(0.138, -0.065, BACK - 0.009)
-	# PHONES on the front, its plug seating flush with the fascia, and the LEVEL knob beside it.
+	_surround_row(host)
+	# PHONES on the front, its plug seating flush with the fascia, and the VOLUME knob beside it.
 	var ph := host.get_node("PhonesOut") as Node3D
 	ph.position = Vector3(PHONES_AT.x, PHONES_AT.y, FRONT + 0.001 - 0.00075)
 	var knob := host.get_node("LevelKnob") as VRKnob
@@ -370,11 +474,11 @@ static func _seat_jacks(host: Node3D) -> void:
 static func _fit_shapes(host: Node3D) -> void:
 	var body := host.get_node("CollisionShape3D") as CollisionShape3D
 	var bs := BoxShape3D.new()
-	bs.size = Vector3(W, H, D)
+	bs.size = Vector3(FULL_W, H, D)
 	body.shape = bs
 	var ptr := host.get_node("PointerArea/CollisionShape3D") as CollisionShape3D
 	var ps := BoxShape3D.new()
-	ps.size = Vector3(W, H, D)
+	ps.size = Vector3(FULL_W, H, D)
 	ptr.shape = ps
 
 

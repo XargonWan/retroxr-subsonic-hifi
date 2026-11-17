@@ -278,21 +278,84 @@ func set_quality(kbps: int, save := true) -> void:
 		print("[Subsonic] %s: quality %s" % [name, "original" if transcode_kbps == 0 else "mp3 %d kbps" % transcode_kbps])
 
 
-## The LEVEL knob: the headphones' level (the base deck), shown on the screen and logged. A lead into LINE OUT is not
-## affected by it (as the CD player's is not): the line out is at full level and the set or the amplifier has the volume.
+## The VOLUME knob: the level of the unit's own speakers and of the headphones in PHONES, shown on the screen and logged.
+## A lead into LINE OUT is not affected by it (as the CD player's is not): the line out is at full level and the set or
+## the amplifier has the volume.
 func set_phones_level(v: float) -> void:
 	super.set_phones_level(v)
 	if not _mode_ready:
 		return              # the knob being set up with the unit, not turned
-	var text := "LEVEL %d%%" % roundi(phones_level * 100.0)
-	osd = text if _via_phones else text + " (PHONES)"
-	print("[Subsonic] %s: LEVEL knob %.2f%s" % [name, phones_level, "" if _via_phones else " (nothing in PHONES: no change to the line out)"])
+	var text := "VOLUME %d%%" % roundi(phones_level * 100.0)
+	var fixed := sound_sink() != null and not _via_phones
+	osd = text + (" (LINE OUT IS FIXED)" if fixed else "")
+	print("[Subsonic] %s: VOLUME knob %.2f%s" % [name, phones_level,
+		" (the line out stays at full level: the knob does not change it)" if fixed else ""])
 	state_changed.emit()
 	if is_inside_tree():
 		get_tree().create_timer(1.5).timeout.connect(func() -> void:
-			if osd == text or osd == text + " (PHONES)":
+			if osd.begins_with(text):
 				osd = ""
 				state_changed.emit())
+
+
+## The knob's position (0..1, the percentage on the screen) as the gain it asks for. Loudness does not follow amplitude
+## linearly: this is a square, so half way is a quarter of the amplitude (-12 dB), a tenth is -40 dB, and the knob
+## sounds like a volume control from one end to the other.
+const VOLUME_CURVE := 2.0
+
+
+static func volume_gain(position: float) -> float:
+	return pow(clampf(position, 0.0, 1.0), VOLUME_CURVE)
+
+
+## The unit has speakers of its own. The base deck, having a line out, is silent until a lead takes its sound; this one
+## plays on its built-in speakers while nothing is cabled, and a lead (LINE OUT or PHONES) takes the sound off them, as
+## the base deck routes it. Which channels play is routed here; HOW LOUD is _apply_volume's.
+func _apply_channel_gains() -> void:
+	if _emitter == null:
+		return
+	var cabled := sound_sink() != null
+	_emitter.set_channel_gains((1.0 if not cabled or _sink_left >= 0 else 0.0) * output_level,
+		(1.0 if not cabled or _sink_right >= 0 else 0.0) * output_level)
+	_apply_volume()
+
+
+## The VOLUME knob is the emitter's own volume, not a channel trim: on Godot's fallback backend (the desktop) a volume set
+## from anywhere (every play, every track) replaces the channel trims, which put the knob's level back to full. It sets
+## the level of the built-in speakers and of the headphones in PHONES; a lead into LINE OUT is at full level (the set or
+## the amplifier has the volume).
+func _apply_volume() -> void:
+	if _emitter == null:
+		return
+	var knob := 1.0 if (sound_sink() != null and not _via_phones) else volume_gain(phones_level)
+	_emitter.set_volume(0.0 if _scan_dir != 0 else _volume_linear * knob)
+
+
+## The cassette's reels turn with the tape's own hubs (a drawn cassette turns them from its place in the tape), as the
+## cassette deck's spindles do; a cassette with no hubs has them turned at the tape's speed.
+func _process(delta: float) -> void:
+	super._process(delta)
+	var tm := get_node_or_null("TapeModel") as ApplianceModel
+	var tape := _slot_tape.get_media() if _slot_tape != null else null
+	if tm == null or tape == null or not is_instance_valid(tape):
+		return
+	var flipped := _slot_tape.seated_side == 1
+	var pairs: Array = [["ReelL", "HubTakeup"], ["ReelR", "HubSupply"]] if flipped \
+		else [["ReelL", "HubSupply"], ["ReelR", "HubTakeup"]]
+	for pair: Array in pairs:
+		var hub := tape.find_child(pair[1], true, false) as Node3D
+		for spindle in tm.parts(pair[0]):
+			if hub != null:
+				spindle.rotation.z = -hub.rotation.z if flipped else hub.rotation.z
+			elif "tape_speed" in tape:
+				spindle.rotation.z = wrapf(spindle.rotation.z + float(tape.get("tape_speed")) * 2.4 * delta, 0.0, TAU)
+
+
+## The speakers stand either side of the unit: the voices are that far apart (the emitter takes half the distance).
+func _setup_audio() -> void:
+	super._setup_audio()
+	_emitter.speaker_separation = (Body.W + Body.SPK_W) / 2.0
+	print("[Subsonic] %s: built-in speakers, %.0f cm apart" % [name, (Body.W + Body.SPK_W) * 100.0])
 
 
 # --- the three functions ----------------------------------------------------------------------------------

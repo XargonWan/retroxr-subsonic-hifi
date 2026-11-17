@@ -153,20 +153,32 @@ func _body(hifi: SubsonicHifi) -> void:
 					overlap = true
 			spots[Vector2(b.position.x, b.position.y)] = true
 	_check(not overlap, "no two caps overlap")
+	# The back is an analog 5.1 line out: six OUT sockets, one per channel, in a row that does not overlap, with its legend.
+	var back_ok := true
+	var back_x := {}
+	for spec: Array in Body.JACKS_OUT:
+		var jack := hifi.get_node_or_null(str(spec[0])) as RcaPort
+		back_ok = back_ok and jack != null and jack.channel == spec[1] and jack.direction == RcaPort.Direction.OUT \
+			and jack.position.z < -Body.D / 2.0 and jack.is_in_group(RcaPort.GROUP)
+		if jack != null:
+			back_x[jack.position.x] = true
+	_check(back_ok and back_x.size() == 6, "the back has the six 5.1 outputs FL FR C SUB SL SR, all OUT, on the back")
+	_check(hifi.get_node_or_null("AvLegend5_1") != null, "and their legend")
 	var lo := hifi.get_node("AudioLOut") as Node3D
 	var ph := hifi.get_node("PhonesOut") as Node3D
 	_check(lo.position.z < -Body.D / 2.0 and ph.position.z > Body.D / 2.0 - 0.001, "the line out is on the back, PHONES on the front")
 	var up := hifi.get_node("UpButton") as VRButton
 	var before: int = hifi.browser.page()["cursor"]
 	hifi.browser.refresh_home()
+	hifi.browser.pages.set_rows(hifi.browser.pages.stack[0], [Pages.row("a", "none"), Pages.row("b", "none"), Pages.row("c", "none")])
 	hifi.browser.pages.stack[0]["cursor"] = 0
 	up.button_pressed.emit()
 	var down := hifi.get_node("DownButton") as VRButton
 	down.button_pressed.emit()
 	down.button_pressed.emit()
-	_check(hifi.browser.page()["cursor"] == 1, "the keys reach the browser (down, down, up: row 1; was %d)" % before)
+	_check(hifi.browser.page()["cursor"] == 2, "the keys reach the browser (up, down, down: row 2; was %d)" % before)
 	var knob_cap := hifi.get_node("LevelKnob/KnobPivot/KnobCap") as MeshInstance3D
-	_check((knob_cap.mesh as CylinderMesh).top_radius >= 0.018, "the LEVEL knob is a big one (%.0f mm across)" % ((knob_cap.mesh as CylinderMesh).top_radius * 2000.0))
+	_check((knob_cap.mesh as CylinderMesh).top_radius >= 0.018, "the VOLUME knob is a big one (%.0f mm across)" % ((knob_cap.mesh as CylinderMesh).top_radius * 2000.0))
 	_check(hifi.get_node("PhonesOut").position.x < hifi.get_node("LevelKnob").position.x, "PHONES stands left of the knob, which has the room at the right")
 	var hole := hifi.get_node_or_null("Model/PhonesHole") as MeshInstance3D
 	_check(hole != null and hole.material_override == Body._mat("black", Color.BLACK) and is_equal_approx(hole.position.x, hifi.get_node("PhonesOut").position.x), "PHONES has a black hole behind its socket")
@@ -180,11 +192,66 @@ func _body(hifi: SubsonicHifi) -> void:
 	_check(hifi.browser.has_armed_row(), "moving the cursor with DOWN chooses a row")
 	hifi.browser.go_home()
 	hifi.is_playing = false
-	_check(hifi.osd == "", "no LEVEL word is on the screen from the unit starting up")
+	_check(hifi.osd == "", "no VOLUME word is on the screen from the unit starting up")
 	var knob := hifi.get_node("LevelKnob") as VRKnob
 	knob.set_value(0.4)
-	_check(hifi.osd.begins_with("LEVEL 40%"), "turning the LEVEL knob shows its setting on the screen")
-	_check(is_equal_approx(hifi.phones_level, 0.4), "the LEVEL knob sets the headphones' level")
+	_check(hifi.osd.begins_with("VOLUME 40%"), "turning the VOLUME knob shows its setting on the screen")
+	_check(is_equal_approx(hifi.phones_level, 0.4), "the VOLUME knob sets the headphones' level")
+	# A hand taking hold of the knob and turning it by a few degrees moves the level a little: it does not jump to mute.
+	knob.set_value(0.75)
+	var r := Body.KNOB_RADIUS * 0.7
+	var mark_deg := 90.0 + rad_to_deg((knob.get_node("KnobPivot") as Node3D).rotation.z)
+	var at := func(deg: float) -> Vector3:
+		return knob.to_global(Vector3(r * cos(deg_to_rad(deg)), r * sin(deg_to_rad(deg)), Body.KNOB_HEIGHT))
+	knob._begin_track(at.call(mark_deg))
+	knob._track_world_point(at.call(mark_deg - 10.0))
+	_check(absf(knob.value - 0.75) < 0.1 and hifi.phones_level > 0.5, "turning the VOLUME knob a little moves the level a little, not to mute")
+	# The unit has speakers of its own: with nothing cabled they play at the VOLUME knob (not silent, and the first turn of
+	# the knob does not mute them); a lead into LINE OUT takes the sound off them at full level, whatever the knob says.
+	var em: SpatialAudioEmitter = hifi.get("_emitter")
+	_check(hifi.get_node("Model/Speaker_L") != null and hifi.get_node("Model/Speaker_R") != null, "the unit has a speaker each side")
+	_check(em != null and em.speaker_separation > Body.W / 2.0, "the voices stand at the unit's two speakers")
+	knob.set_value(0.75)
+	_check(is_equal_approx(em.get_volume(), SubsonicHifi.volume_gain(0.75)) and is_equal_approx(em._ch_gain_l, 1.0) and is_equal_approx(em._ch_gain_r, 1.0), "nothing cabled: the built-in speakers play both channels at the knob's level")
+	knob.set_value(0.3)
+	_check(is_equal_approx(em.get_volume(), SubsonicHifi.volume_gain(0.3)) and em.get_volume() > 0.0, "turning the knob sets the built-in speakers' level, it does not mute them")
+	# The knob is the volume, whatever else sets it: a play, a new track.
+	hifi._apply_volume()
+	_check(is_equal_approx(em.get_volume(), SubsonicHifi.volume_gain(0.3)), "and a volume set from the deck's own code (every play) keeps it")
+	# The percentage is where the marker stands: 0 at the lower left, 50 straight up, 100 at the lower right.
+	var pivot := knob.get_node("KnobPivot") as Node3D
+	knob.set_value(0.5)
+	var up_mark := _across(knob, pivot)
+	_check(absf(pivot.rotation_degrees.z) < 0.5 and up_mark.y > 0.95, "50% has the marker straight up")
+	knob.set_value(0.0)
+	var low_mark := _across(knob, pivot)
+	_check(low_mark.x < -0.5 and low_mark.y < -0.5 and is_equal_approx(pivot.rotation_degrees.z, 135.0), "0% has it at the lower left")
+	knob.set_value(1.0)
+	var high_mark := _across(knob, pivot)
+	_check(high_mark.x > 0.5 and high_mark.y < -0.5 and is_equal_approx(pivot.rotation_degrees.z, -135.0), "and 100% at the lower right")
+	knob.set_value(1.0)
+	var full := em.get_volume()
+	knob.set_value(0.5)
+	var half := em.get_volume()
+	_check(is_equal_approx(full, 1.0) and half < full * 0.3 and half > full * 0.2, "100% is full and 50% is a quarter of the amplitude (-12 dB): they do not sound the same")
+	_check(SubsonicHifi.volume_gain(0.0) == 0.0 and SubsonicHifi.volume_gain(0.1) < 0.02, "0% is silence and the bottom of the knob is quiet")
+	var lead := Node3D.new()
+	hifi.set("_sound_sink", lead)
+	hifi.set("_sink_left", 0)
+	hifi.set("_sink_right", 1)
+	hifi.set("_via_phones", false)
+	knob.set_value(0.2)
+	_check(is_equal_approx(em.get_volume(), 1.0) and is_equal_approx(em._ch_gain_l, 1.0), "a lead in LINE OUT takes the sound at full level: the knob does not change it")
+	hifi.set("_via_phones", true)
+	knob.set_value(0.4)
+	_check(is_equal_approx(em.get_volume(), SubsonicHifi.volume_gain(0.4)), "headphones in PHONES follow the knob")
+	hifi.set("_via_phones", false)
+	hifi.set("_sound_sink", null)
+	hifi.set("_sink_left", -1)
+	hifi.set("_sink_right", -1)
+	lead.free()
+	knob.set_value(0.75)
+	knob.set_value(0.4)
 	var sv := hifi.get_node("Screen/Viewport") as SubViewport
 	_check(sv != null and sv.get_child_count() == 1 and sv.get_child(0).get("browser") == hifi.browser, "the screen is up and bound to the browser")
 	var screen := sv.get_child(0)
@@ -193,6 +260,12 @@ func _body(hifi: SubsonicHifi) -> void:
 	_check(not screen._filter.visible and Config.load_all()["lcd_filter"] == false, "the TAB switch takes it off, and it is kept")
 	hifi.set_lcd_filter(true)
 	_check(screen._filter.visible, "and back on")
+
+
+## Where the knob's marker points on the fascia (x, y), a unit vector.
+func _across(knob: Node3D, pivot: Node3D) -> Vector2:
+	var d := (pivot.get_node("KnobMark") as Node3D).global_position - knob.global_position
+	return Vector2(d.x, d.y).normalized()
 
 
 func _led_lit(hifi: SubsonicHifi, i: int) -> bool:
